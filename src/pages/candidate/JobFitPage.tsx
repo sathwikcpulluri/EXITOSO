@@ -84,10 +84,10 @@ export default function JobFitPage() {
       try {
         const {
           data: { user: authUser },
+          error: authError,
         } = await supabase.auth.getUser()
 
-        const targetId = authUser?.id || user?.id
-        if (!targetId) {
+        if (authError || !authUser) {
           setIsLoadingProfile(false)
           return
         }
@@ -95,34 +95,41 @@ export default function JobFitPage() {
         const { data, error } = await supabase
           .from('profiles')
           .select('*')
-          .eq('id', targetId)
+          .eq('id', authUser.id)
           .single()
 
         if (error) {
           console.warn('[JobFit] Profile fetch warning:', error.message)
-        } else if (data) {
-          if (data.full_name) setCandidateName(data.full_name)
-          if (data.headline) setCandidateHeadline(data.headline)
-          if (data.experience_years !== undefined) setCandidateExperience(Number(data.experience_years))
+        }
 
-          if (Array.isArray(data.skills)) {
-            const skillNames = data.skills.map((s: any) => (typeof s === 'string' ? s : s.name))
-            const cleanSkills = skillNames.filter(Boolean)
-            setCandidateSkills(cleanSkills)
+        const meta = authUser.user_metadata || {}
 
-            // Auto-evaluate if navigated with prefilled description
-            const navDesc = (location.state as any)?.prefilledDescription
-            if (navDesc && cleanSkills.length > 0) {
-              api.evaluateFit(
-                cleanSkills,
-                Number(data.experience_years) || 0,
-                (location.state as any)?.preselectedJobId,
-                navDesc,
-                data.headline,
-                data.full_name
-              ).then((res) => setAssessmentResult(res))
-            }
-          }
+        // Harmonized extraction matching ProfilePage.tsx
+        const finalName = data?.full_name || meta.full_name || meta.name || user?.fullName || ''
+        const finalHeadline = data?.headline || meta.headline || ''
+        const finalYears = data?.experience_years !== undefined ? Number(data.experience_years) : (meta.experience_years ?? 0)
+
+        const rawSkills = data?.skills || meta.skills
+        const cleanSkills: string[] = Array.isArray(rawSkills)
+          ? rawSkills.map((s: any) => (typeof s === 'string' ? s : s.name)).filter(Boolean)
+          : []
+
+        setCandidateName(finalName)
+        setCandidateHeadline(finalHeadline)
+        setCandidateExperience(finalYears)
+        setCandidateSkills(cleanSkills)
+
+        // Auto-evaluate if navigated with prefilled description
+        const navDesc = (location.state as any)?.prefilledDescription
+        if (navDesc && cleanSkills.length > 0) {
+          api.evaluateFit(
+            cleanSkills,
+            finalYears,
+            (location.state as any)?.preselectedJobId,
+            navDesc,
+            finalHeadline,
+            finalName
+          ).then((res) => setAssessmentResult(res))
         }
       } catch (err) {
         console.error('[JobFit] Profile load exception:', err)
@@ -144,7 +151,7 @@ export default function JobFitPage() {
     }
 
     if (candidateSkills.length === 0) {
-      setErrorMessage('Please upload a resume or add skills in your Profile before evaluating job fit.')
+      setErrorMessage('Please upload a resume or add skills to your Profile before evaluating job fit.')
       return
     }
 
@@ -196,22 +203,31 @@ export default function JobFitPage() {
         subtitle="Compare your profile against any job description to evaluate your match probability, skill alignment, and gap mitigation."
       />
 
-      {/* Profile Overview Bar */}
+      {/* Active Profile Overview Bar */}
       <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-2">
-          <Briefcase className="h-4 w-4 text-orange-400" />
-          <span>
-            Active Profile: <strong className="text-white">{candidateName || 'Candidate'}</strong>
-            {candidateHeadline && <span className="text-neutral-400"> ({candidateHeadline})</span>}
-          </span>
-        </div>
-        <div className="flex items-center gap-4 text-neutral-400">
-          <span>{candidateExperience} Yrs Experience</span>
-          <span>{candidateSkills.length} Verified Skills</span>
-          <Link to="/candidate/profile" className="text-rose-400 hover:text-rose-300 underline font-semibold">
-            Edit Profile
-          </Link>
-        </div>
+        {isLoadingProfile ? (
+          <div className="flex items-center gap-2 text-neutral-400">
+            <RefreshCw className="h-4 w-4 animate-spin text-rose-500" />
+            <span>Loading authenticated candidate profile...</span>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center gap-2">
+              <Briefcase className="h-4 w-4 text-orange-400" />
+              <span>
+                Active Profile: <strong className="text-white">{candidateName || user?.fullName || 'Candidate'}</strong>
+                {candidateHeadline && <span className="text-neutral-400"> ({candidateHeadline})</span>}
+              </span>
+            </div>
+            <div className="flex items-center gap-4 text-neutral-400">
+              <span className="font-medium text-neutral-300">{candidateExperience} Yrs Experience</span>
+              <span className="font-medium text-emerald-400">{candidateSkills.length} Verified Skills</span>
+              <Link to="/candidate/profile" className="text-rose-400 hover:text-rose-300 underline font-semibold cursor-pointer">
+                Edit Profile
+              </Link>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
