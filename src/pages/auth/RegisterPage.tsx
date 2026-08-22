@@ -88,7 +88,7 @@ export default function RegisterPage() {
     // 2. CHECK SUPABASE CONFIGURATION
     if (!isSupabaseConfigured) {
       setGeneralError(
-        'Supabase backend credentials (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY) are not configured in your .env file. Please add your credentials to connect authentication.'
+        'Supabase authentication is not configured. Please configure the environment variables.'
       )
       return
     }

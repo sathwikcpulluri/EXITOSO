@@ -40,7 +40,7 @@ export default function LoginPage() {
 
     if (!isSupabaseConfigured) {
       setGeneralError(
-        'Supabase credentials are not configured in .env. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.'
+        'Supabase authentication is not configured. Please configure the environment variables.'
       )
       return
     }
