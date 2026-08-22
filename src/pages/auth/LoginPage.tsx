@@ -8,7 +8,7 @@ import {
   validatePassword,
   normalizeEmail,
 } from '@/lib/validators'
-import { ArrowRight, Lock, Mail, Sparkles, AlertCircle } from 'lucide-react'
+import { ArrowRight, Lock, Mail, Sparkles, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -20,11 +20,16 @@ export default function LoginPage() {
   const [emailError, setEmailError] = useState('')
   const [passwordError, setPasswordError] = useState('')
   const [generalError, setGeneralError] = useState('')
+  const [resendSuccess, setResendSuccess] = useState('')
+  const [isUnverified, setIsUnverified] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [isResending, setIsResending] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setGeneralError('')
+    setResendSuccess('')
+    setIsUnverified(false)
 
     const emailVal = validateGmail(email)
     const passVal = validatePassword(password)
@@ -57,10 +62,12 @@ export default function LoginPage() {
         setIsLoading(false)
         console.error('[Supabase SignIn Error]', error.message)
         const msg = error.message.toLowerCase()
-        if (msg.includes('invalid login credentials') || msg.includes('invalid credentials')) {
+
+        if (msg.includes('email not confirmed') || msg.includes('not verified') || msg.includes('unverified')) {
+          setIsUnverified(true)
+          setGeneralError('Please verify your email before signing in.')
+        } else if (msg.includes('invalid login credentials') || msg.includes('invalid credentials')) {
           setGeneralError('Invalid email or password. Please check your credentials and try again.')
-        } else if (msg.includes('email not confirmed')) {
-          setGeneralError('Please check your inbox and verify your email address before signing in.')
         } else if (msg.includes('network') || msg.includes('fetch')) {
           setGeneralError('Unable to connect. Please check your internet connection and try again.')
         } else {
@@ -103,12 +110,54 @@ export default function LoginPage() {
     }
   }
 
+  const handleResendVerification = async () => {
+    if (!email.trim() || isResending) return
+
+    const emailVal = validateGmail(email)
+    if (!emailVal.isValid) {
+      setEmailError(emailVal.error || 'Please enter a valid Gmail address.')
+      return
+    }
+
+    setIsResending(true)
+    setResendSuccess('')
+    setGeneralError('')
+
+    try {
+      const cleanEmail = normalizeEmail(email)
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: cleanEmail,
+      })
+
+      setIsResending(false)
+
+      if (error) {
+        console.error('[Supabase Resend Verification Error]', error.message)
+        const msg = error.message.toLowerCase()
+        if (msg.includes('rate limit') || msg.includes('too many') || msg.includes('seconds')) {
+          setGeneralError('Too many resend attempts. Please wait a minute before requesting another email.')
+        } else {
+          setGeneralError(error.message || 'Unable to resend verification email.')
+        }
+      } else {
+        setResendSuccess('Verification email sent. Please check your inbox.')
+      }
+    } catch (err: any) {
+      setIsResending(false)
+      console.error('[CareerAI Resend Exception]', err)
+      setGeneralError('Unable to connect. Please check your internet connection and try again.')
+    }
+  }
+
   const handleFillDemo = () => {
     setEmail('sarah.connor@gmail.com')
     setPassword('SecurePass123!')
     setEmailError('')
     setPasswordError('')
     setGeneralError('')
+    setResendSuccess('')
+    setIsUnverified(false)
   }
 
   return (
@@ -120,10 +169,43 @@ export default function LoginPage() {
         </p>
       </div>
 
+      {/* General Error Banner */}
       {generalError && (
-        <div className="p-3.5 rounded-xl bg-rose-950/50 border border-rose-500/40 text-xs text-rose-200 flex items-start gap-2.5 animate-fade-in">
-          <AlertCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
-          <span className="leading-relaxed">{generalError}</span>
+        <div className="p-3.5 rounded-xl bg-rose-950/50 border border-rose-500/40 text-xs text-rose-200 space-y-2 animate-fade-in">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+            <span className="leading-relaxed font-medium">{generalError}</span>
+          </div>
+
+          {/* Resend Verification Action Button */}
+          {isUnverified && (
+            <div className="pt-1.5 border-t border-rose-500/20 flex items-center justify-between">
+              <span className="text-neutral-400">Didn't receive the email?</span>
+              <button
+                type="button"
+                onClick={handleResendVerification}
+                disabled={isResending}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-orange-400 hover:text-orange-300 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {isResending ? (
+                  <>
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  'Resend verification email'
+                )}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Resend Success Banner */}
+      {resendSuccess && (
+        <div className="p-3.5 rounded-xl bg-emerald-950/50 border border-emerald-500/40 text-xs text-emerald-200 flex items-start gap-2.5 animate-fade-in">
+          <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+          <span className="leading-relaxed font-medium">{resendSuccess}</span>
         </div>
       )}
 
