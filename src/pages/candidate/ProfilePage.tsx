@@ -145,7 +145,7 @@ export default function CandidateProfilePage() {
     return Math.min(score, 100)
   }
 
-  // Save changes to Supabase
+  // Save changes to Supabase with dynamic self-healing column recovery
   const handleSave = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
 
@@ -166,11 +166,11 @@ export default function CandidateProfilePage() {
         return
       }
 
-      // 2. Build structured payload
-      const payload = {
+      // 2. Build complete desired payload
+      const payload: Record<string, any> = {
         full_name: candidateName || user?.fullName,
-        headline,
-        location,
+        headline: headline || null,
+        location: location || null,
         experience_years: experienceYears,
         skills,
         experience,
@@ -187,37 +187,37 @@ export default function CandidateProfilePage() {
         updated_at: new Date().toISOString(),
       }
 
-      // 3. Execute update
-      let { error } = await supabase
-        .from('profiles')
-        .update(payload)
-        .eq('id', targetUserId)
+      // 3. Dynamic self-healing save loop: automatically prunes unmigrated columns
+      let saveError: string | null = null
+      let isSaved = false
 
-      // Graceful fallback if specific columns are not yet refreshed in schema cache
-      if (error && error.message.includes('schema cache')) {
-        const fallbackPayload: Record<string, any> = {
-          full_name: candidateName || user?.fullName,
-          headline,
-          location,
-          experience_years: experienceYears,
-          skills,
-          experience,
-          education,
-          updated_at: new Date().toISOString(),
-        }
-        const retryResult = await supabase
+      for (let attempt = 0; attempt < 12; attempt++) {
+        const { error } = await supabase
           .from('profiles')
-          .update(fallbackPayload)
+          .update(payload)
           .eq('id', targetUserId)
 
-        if (!retryResult.error) {
-          error = null
+        if (!error) {
+          isSaved = true
+          break
         }
+
+        // Detect missing column error from PostgREST schema cache
+        const match = error.message.match(/Could not find the '([^']+)' column/i)
+        if (match && match[1] && match[1] in payload) {
+          const missingCol = match[1]
+          console.warn(`[Profile Save] Column '${missingCol}' missing in profiles table. Retrying without it...`)
+          delete payload[missingCol]
+          continue
+        }
+
+        saveError = error.message
+        break
       }
 
-      if (error) {
-        console.error('[Supabase Save Profile Error]', error)
-        setErrorMessage(`Failed to save changes: ${error.message}`)
+      if (!isSaved && saveError) {
+        console.error('[Supabase Save Profile Error]', saveError)
+        setErrorMessage(`Failed to save changes: ${saveError}`)
       } else {
         if (candidateName && candidateName !== user?.fullName) {
           if (user) setUser({ ...user, fullName: candidateName })
@@ -323,9 +323,9 @@ export default function CandidateProfilePage() {
       setResumeFilename(file.name)
       setParsingConfidence(parseResult.confidence || 0)
 
-      // 6. Persist extracted profile directly to Supabase
-      const updatePayload = {
-        full_name: parseResult.full_name || candidateName || user.fullName,
+      // 6. Persist extracted profile directly to Supabase with self-healing recovery
+      const updatePayload: Record<string, any> = {
+        full_name: parseResult.full_name || candidateName || user?.fullName,
         headline: parseResult.headline || (parsedSkillItems.length > 0 ? `${parsedSkillItems.slice(0, 3).map((s) => s.name).join(', ')} Professional` : null),
         location: parseResult.location || location || null,
         experience_years: parseResult.years_experience ?? experienceYears,
@@ -338,10 +338,21 @@ export default function CandidateProfilePage() {
         updated_at: new Date().toISOString(),
       }
 
-      await supabase
-        .from('profiles')
-        .update(updatePayload)
-        .eq('id', user.id)
+      for (let attempt = 0; attempt < 12; attempt++) {
+        const { error } = await supabase
+          .from('profiles')
+          .update(updatePayload)
+          .eq('id', user.id)
+
+        if (!error) break
+
+        const match = error.message.match(/Could not find the '([^']+)' column/i)
+        if (match && match[1] && match[1] in updatePayload) {
+          delete updatePayload[match[1]]
+          continue
+        }
+        break
+      }
 
       setSaveSuccess('Resume analyzed successfully.')
     } catch (err: any) {
