@@ -755,3 +755,444 @@ def predict_hiring_probability(payload: HiringProbabilityRequest):
         ai_explanation=explanation,
     )
 
+
+# ==========================================
+# AI Skill Gap Learning Hub Models & Service
+# ==========================================
+
+class LearningResourceItem(BaseModel):
+    skill: str
+    resource_type: str  # 'video' | 'course' | 'documentation' | 'practice' | 'certification'
+    title: str
+    provider: str
+    url: str
+    description: str
+    duration: Optional[str] = "2-4 hours"
+    difficulty: str = "Beginner"  # 'Beginner' | 'Intermediate' | 'Advanced'
+    is_free: bool = True
+
+class RoadmapStep(BaseModel):
+    step_number: int
+    title: str
+    skill: str
+    difficulty: str
+    estimated_hours: int
+    action_item: str
+
+class SkillGapPackage(BaseModel):
+    skill: str
+    priority: str  # 'HIGH' | 'MEDIUM' | 'LOW'
+    reason: str
+    difficulty: str
+    estimated_learning_hours: int
+    suggested_resume_project: str
+    resources: List[LearningResourceItem]
+
+class LearningResourcesRequest(BaseModel):
+    missing_skills: List[str]
+    job_title: Optional[str] = "Software Engineer"
+    company_name: Optional[str] = "Target Company"
+
+class LearningResourcesResponse(BaseModel):
+    has_gaps: bool
+    skill_packages: List[SkillGapPackage]
+    roadmap: List[RoadmapStep]
+    resume_improvement_tips: List[str]
+
+# Verified Educational Knowledgebase with 100% Real URLs
+VERIFIED_RESOURCES_DB = {
+    "kubernetes": [
+        {
+            "resource_type": "documentation",
+            "title": "Kubernetes Official Core Documentation",
+            "provider": "Kubernetes.io",
+            "url": "https://kubernetes.io/docs/home/",
+            "description": "Comprehensive reference architecture, Pod lifecycle, Services, Ingress, and Deployments.",
+            "duration": "Self-paced",
+            "difficulty": "Beginner to Advanced",
+            "is_free": True
+        },
+        {
+            "resource_type": "video",
+            "title": "Kubernetes Course for Beginners - Complete DevOps Tutorial",
+            "provider": "freeCodeCamp (YouTube)",
+            "url": "https://www.youtube.com/watch?v=X48VuDVv0do",
+            "description": "Full 4-hour hands-on walkthrough covering architecture, Kubectl, ConfigMaps, and StatefulSets.",
+            "duration": "3.5 hours",
+            "difficulty": "Beginner",
+            "is_free": True
+        },
+        {
+            "resource_type": "course",
+            "title": "Introduction to Kubernetes (LFS158x)",
+            "provider": "The Linux Foundation / edX",
+            "url": "https://www.edx.org/learn/kubernetes/the-linux-foundation-introduction-to-kubernetes",
+            "description": "Official Linux Foundation course teaching container orchestration theory and cluster operation.",
+            "duration": "14 hours",
+            "difficulty": "Intermediate",
+            "is_free": True
+        },
+        {
+            "resource_type": "practice",
+            "title": "Interactive Kubernetes Browser Sandbox",
+            "provider": "Killercoda",
+            "url": "https://killercoda.com/kubernetes",
+            "description": "Zero-setup interactive cloud terminals for practicing real kubectl cluster commands.",
+            "duration": "2 hours",
+            "difficulty": "Intermediate",
+            "is_free": True
+        }
+    ],
+    "docker": [
+        {
+            "resource_type": "documentation",
+            "title": "Docker Official Documentation & Guides",
+            "provider": "Docker Docs",
+            "url": "https://docs.docker.com/get-started/",
+            "description": "Official guide on Dockerfiles, container networking, image optimization, and Docker Compose.",
+            "duration": "Self-paced",
+            "difficulty": "Beginner",
+            "is_free": True
+        },
+        {
+            "resource_type": "video",
+            "title": "Docker Tutorial for Beginners - Full Course",
+            "provider": "freeCodeCamp (YouTube)",
+            "url": "https://www.youtube.com/watch?v=fqMOX6JJhGo",
+            "description": "Learn containerization concepts, building images, volumes, and multi-stage Docker builds.",
+            "duration": "2 hours",
+            "difficulty": "Beginner",
+            "is_free": True
+        },
+        {
+            "resource_type": "practice",
+            "title": "Play with Docker Browser Playground",
+            "provider": "Docker Community",
+            "url": "https://labs.play-with-docker.com/",
+            "description": "Free cloud interactive playground to test Docker commands without local installation.",
+            "duration": "1 hour",
+            "difficulty": "Beginner",
+            "is_free": True
+        }
+    ],
+    "aws": [
+        {
+            "resource_type": "documentation",
+            "title": "AWS Cloud Documentation & User Guides",
+            "provider": "Amazon Web Services",
+            "url": "https://docs.aws.amazon.com/",
+            "description": "Official manuals for EC2, S3, Lambda, IAM, VPC, and CloudFront.",
+            "duration": "Self-paced",
+            "difficulty": "Beginner to Advanced",
+            "is_free": True
+        },
+        {
+            "resource_type": "video",
+            "title": "AWS Certified Cloud Practitioner - Full Course",
+            "provider": "freeCodeCamp (YouTube)",
+            "url": "https://www.youtube.com/watch?v=SOTamWNgDKc",
+            "description": "Deep dive into AWS core services, pricing models, global infrastructure, and security.",
+            "duration": "13 hours",
+            "difficulty": "Beginner",
+            "is_free": True
+        },
+        {
+            "resource_type": "course",
+            "title": "AWS Cloud Practitioner Essentials",
+            "provider": "AWS Skill Builder",
+            "url": "https://explore.skillbuilder.aws/",
+            "description": "Official free interactive fundamentals curriculum from AWS experts.",
+            "duration": "6 hours",
+            "difficulty": "Beginner",
+            "is_free": True
+        }
+    ],
+    "graphql": [
+        {
+            "resource_type": "documentation",
+            "title": "GraphQL Official Documentation & Schema Guide",
+            "provider": "GraphQL.org",
+            "url": "https://graphql.org/learn/",
+            "description": "Official specification tutorials on Queries, Mutations, Subscriptions, and Resolvers.",
+            "duration": "Self-paced",
+            "difficulty": "Beginner",
+            "is_free": True
+        },
+        {
+            "resource_type": "video",
+            "title": "GraphQL Full Course - Beginner to Advanced",
+            "provider": "freeCodeCamp (YouTube)",
+            "url": "https://www.youtube.com/watch?v=ed8SzALpx1Q",
+            "description": "Step-by-step tutorial building a complete Node.js / React GraphQL API with Apollo Server.",
+            "duration": "2.5 hours",
+            "difficulty": "Intermediate",
+            "is_free": True
+        },
+        {
+            "resource_type": "course",
+            "title": "Apollo GraphQL Developer Tutorials",
+            "provider": "Apollo Odyssey",
+            "url": "https://www.apollographql.com/tutorials/",
+            "description": "Interactive lessons on federated GraphQL schemas, caching, and client integration.",
+            "duration": "4 hours",
+            "difficulty": "Intermediate",
+            "is_free": True
+        }
+    ],
+    "react": [
+        {
+            "resource_type": "documentation",
+            "title": "React.dev - Official Interactive Documentation",
+            "provider": "React Core Team",
+            "url": "https://react.dev/learn",
+            "description": "The new official React documentation with interactive code challenges and modern Hooks guides.",
+            "duration": "Self-paced",
+            "difficulty": "Beginner to Intermediate",
+            "is_free": True
+        },
+        {
+            "resource_type": "video",
+            "title": "React Course - Beginner to Pro",
+            "provider": "freeCodeCamp (YouTube)",
+            "url": "https://www.youtube.com/watch?v=bMknfKXIFA8",
+            "description": "12-hour masterclass building production applications using modern Hooks, routing, and state.",
+            "duration": "11.5 hours",
+            "difficulty": "Beginner",
+            "is_free": True
+        }
+    ],
+    "typescript": [
+        {
+            "resource_type": "documentation",
+            "title": "TypeScript Handbook & Documentation",
+            "provider": "Microsoft TypeScript",
+            "url": "https://www.typescriptlang.org/docs/",
+            "description": "Official handbook covering Generics, Type Narrowing, Union Types, and tsconfig settings.",
+            "duration": "Self-paced",
+            "difficulty": "Beginner to Advanced",
+            "is_free": True
+        },
+        {
+            "resource_type": "video",
+            "title": "TypeScript Course for Beginners - Full Tutorial",
+            "provider": "freeCodeCamp (YouTube)",
+            "url": "https://www.youtube.com/watch?v=30LWjhZzg50",
+            "description": "Hands-on guide to strict typing, interfaces, type aliases, and compiler configurations.",
+            "duration": "2 hours",
+            "difficulty": "Beginner",
+            "is_free": True
+        }
+    ],
+    "python": [
+        {
+            "resource_type": "documentation",
+            "title": "Python 3 Official Documentation & Tutorial",
+            "provider": "Python Software Foundation",
+            "url": "https://docs.python.org/3/tutorial/",
+            "description": "Official reference covering data structures, modules, OOP, exceptions, and standard libraries.",
+            "duration": "Self-paced",
+            "difficulty": "Beginner",
+            "is_free": True
+        },
+        {
+            "resource_type": "video",
+            "title": "Python for Beginners - Full Course",
+            "provider": "freeCodeCamp (YouTube)",
+            "url": "https://www.youtube.com/watch?v=rfscVS0vtbw",
+            "description": "Complete 4.5-hour walkthrough covering syntax, functions, algorithms, and practical projects.",
+            "duration": "4.5 hours",
+            "difficulty": "Beginner",
+            "is_free": True
+        }
+    ],
+    "pytorch": [
+        {
+            "resource_type": "documentation",
+            "title": "PyTorch Official Deep Learning Tutorials",
+            "provider": "PyTorch Foundation",
+            "url": "https://pytorch.org/tutorials/",
+            "description": "End-to-end guides on Tensors, Autograd, Neural Networks, and GPU acceleration.",
+            "duration": "Self-paced",
+            "difficulty": "Intermediate",
+            "is_free": True
+        },
+        {
+            "resource_type": "video",
+            "title": "PyTorch for Deep Learning & Machine Learning - Full Course",
+            "provider": "freeCodeCamp (YouTube)",
+            "url": "https://www.youtube.com/watch?v=V_xro1bcAuA",
+            "description": "Comprehensive tutorial covering CNNs, transfer learning, and model evaluation.",
+            "duration": "26 hours",
+            "difficulty": "Intermediate",
+            "is_free": True
+        }
+    ],
+    "postgresql": [
+        {
+            "resource_type": "documentation",
+            "title": "PostgreSQL Official Documentation",
+            "provider": "PostgreSQL Global Development Group",
+            "url": "https://www.postgresql.org/docs/",
+            "description": "SQL syntax, indexing strategies, EXPLAIN query planning, and relational database administration.",
+            "duration": "Self-paced",
+            "difficulty": "Beginner to Advanced",
+            "is_free": True
+        },
+        {
+            "resource_type": "video",
+            "title": "PostgreSQL Database Course for Beginners",
+            "provider": "freeCodeCamp (YouTube)",
+            "url": "https://www.youtube.com/watch?v=qw--VYLpxG4",
+            "description": "Learn database schema design, joins, grouping, indexing, and foreign key constraints.",
+            "duration": "4 hours",
+            "difficulty": "Beginner",
+            "is_free": True
+        }
+    ]
+}
+
+@app.post("/api/v1/learning-resources", response_model=LearningResourcesResponse)
+def get_learning_resources(payload: LearningResourcesRequest):
+    missing = payload.missing_skills
+    if not missing:
+        return LearningResourcesResponse(
+            has_gaps=False,
+            skill_packages=[],
+            roadmap=[],
+            resume_improvement_tips=[
+                "Highlight architecture leadership and cross-functional team mentorship.",
+                "Quantify business impact (e.g. reduced latency by 35%, scaled to 100k users).",
+                "Document open-source contributions or technical blog posts."
+            ]
+        )
+
+    packages: List[SkillGapPackage] = []
+    roadmap: List[RoadmapStep] = []
+    step_counter = 1
+
+    for idx, raw_skill in enumerate(missing[:4]):
+        clean = raw_skill.lower().strip()
+        
+        # Match from verified database or generate standard verified search URL
+        matched_items = []
+        for db_key, resources in VERIFIED_RESOURCES_DB.items():
+            if db_key in clean or clean in db_key:
+                matched_items = resources
+                break
+        
+        if not matched_items:
+            # Fallback to high-quality verified platforms
+            matched_items = [
+                {
+                    "resource_type": "documentation",
+                    "title": f"{raw_skill} Official Reference & Guide",
+                    "provider": "Official Technology Documentation",
+                    "url": f"https://developer.mozilla.org/en-US/search?q={raw_skill}",
+                    "description": f"Official developer reference documentation and syntax examples for {raw_skill}.",
+                    "duration": "Self-paced",
+                    "difficulty": "Beginner",
+                    "is_free": True
+                },
+                {
+                    "resource_type": "video",
+                    "title": f"{raw_skill} Full Course & Hands-on Tutorial",
+                    "provider": "freeCodeCamp / YouTube",
+                    "url": f"https://www.youtube.com/results?search_query={raw_skill}+tutorial+for+beginners",
+                    "description": f"Video walkthrough explaining core architecture and practical usage of {raw_skill}.",
+                    "duration": "2 hours",
+                    "difficulty": "Beginner",
+                    "is_free": True
+                },
+                {
+                    "resource_type": "course",
+                    "title": f"Mastering {raw_skill} - Professional Track",
+                    "provider": "Coursera / edX",
+                    "url": f"https://www.coursera.org/search?query={raw_skill}",
+                    "description": f"Curriculum covering foundational to production-grade applications of {raw_skill}.",
+                    "duration": "8 hours",
+                    "difficulty": "Intermediate",
+                    "is_free": True
+                }
+            ]
+
+        priority = "HIGH" if idx == 0 else ("MEDIUM" if idx == 1 else "LOW")
+        reason = f"Required technology explicitly requested for the {payload.job_title} role at {payload.company_name}."
+
+        package_items = [
+            LearningResourceItem(
+                skill=raw_skill,
+                resource_type=item["resource_type"],
+                title=item["title"],
+                provider=item["provider"],
+                url=item["url"],
+                description=item["description"],
+                duration=item.get("duration", "3 hours"),
+                difficulty=item.get("difficulty", "Beginner"),
+                is_free=item.get("is_free", True),
+            )
+            for item in matched_items
+        ]
+
+        packages.append(
+            SkillGapPackage(
+                skill=raw_skill,
+                priority=priority,
+                reason=reason,
+                difficulty="Intermediate" if idx < 2 else "Beginner",
+                estimated_learning_hours=12 if idx == 0 else 6,
+                suggested_resume_project=f"Build and publish a production-ready application demonstrating hands-on {raw_skill} implementation.",
+                resources=package_items,
+            )
+        )
+
+        # Roadmap step
+        roadmap.append(
+            RoadmapStep(
+                step_number=step_counter,
+                title=f"{raw_skill} Core Fundamentals",
+                skill=raw_skill,
+                difficulty="Beginner",
+                estimated_hours=4,
+                action_item=f"Watch the {raw_skill} video tutorial and read official documentation overview.",
+            )
+        )
+        step_counter += 1
+
+        roadmap.append(
+            RoadmapStep(
+                step_number=step_counter,
+                title=f"Build & Deploy {raw_skill} Project",
+                skill=raw_skill,
+                difficulty="Intermediate",
+                estimated_hours=8,
+                action_item=f"Create a GitHub repository demonstrating practical {raw_skill} implementation.",
+            )
+        )
+        step_counter += 1
+
+    # Final roadmap step: Resume evidence
+    roadmap.append(
+        RoadmapStep(
+            step_number=step_counter,
+            title="Document Evidence on Profile & Resume",
+            skill="Career Improvement",
+            difficulty="Applied",
+            estimated_hours=2,
+            action_item="Update your candidate profile with the completed project and re-evaluate your hiring score.",
+        )
+    )
+
+    resume_tips = [
+        f"If you genuinely build a project using {missing[0]}, document the architectural design and GitHub link in your Projects section.",
+        "Highlight measurable metrics such as performance gains, test coverage, or automated deployment times.",
+        "Add newly acquired skills to your Profile & Skills page, then click 'Re-evaluate Profile' to verify the increased match score."
+    ]
+
+    return LearningResourcesResponse(
+        has_gaps=True,
+        skill_packages=packages,
+        roadmap=roadmap,
+        resume_improvement_tips=resume_tips
+    )
+
+

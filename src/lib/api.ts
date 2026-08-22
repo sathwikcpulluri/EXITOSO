@@ -129,6 +129,44 @@ export interface HiringProbabilityResult {
   ai_explanation: string
 }
 
+export interface LearningResourceItem {
+  skill: string
+  resource_type: 'video' | 'course' | 'documentation' | 'practice' | 'certification' | string
+  title: string
+  provider: string
+  url: string
+  description: string
+  duration?: string
+  difficulty?: string
+  is_free?: boolean
+}
+
+export interface RoadmapStep {
+  step_number: number
+  title: string
+  skill: string
+  difficulty: string
+  estimated_hours: number
+  action_item: string
+}
+
+export interface SkillGapPackage {
+  skill: string
+  priority: 'HIGH' | 'MEDIUM' | 'LOW' | string
+  reason: string
+  difficulty: string
+  estimated_learning_hours: number
+  suggested_resume_project: string
+  resources: LearningResourceItem[]
+}
+
+export interface LearningResourcesResponse {
+  has_gaps: boolean
+  skill_packages: SkillGapPackage[]
+  roadmap: RoadmapStep[]
+  resume_improvement_tips: string[]
+}
+
 // Master Skill Catalog for Deterministic Extraction
 const SKILL_CATALOG = [
   { name: 'JavaScript', category: 'language' },
@@ -826,6 +864,156 @@ export const api = {
           `Tailor your headline specifically for ${payload.job_title} positions at ${payload.company_name}.`,
         ],
         ai_explanation: `Based on verified competencies, ${payload.candidate_name || 'the candidate'} demonstrates ${matchIndex}% match alignment for ${payload.job_title} at ${payload.company_name}. Estimated hiring probability is ${hiringProb}% (${strength}).`,
+      }
+    }
+  },
+
+  async getLearningResources(
+    missingSkills: string[],
+    jobTitle?: string,
+    companyName?: string
+  ): Promise<LearningResourcesResponse> {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/learning-resources`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          missing_skills: missingSkills,
+          job_title: jobTitle || 'Software Engineer',
+          company_name: companyName || 'Target Organization',
+        }),
+      })
+      if (!res.ok) throw new Error('API request failed')
+      return await res.json()
+    } catch {
+      // Deterministic fallback using verified knowledge base URLs
+      if (!missingSkills || missingSkills.length === 0) {
+        return {
+          has_gaps: false,
+          skill_packages: [],
+          roadmap: [],
+          resume_improvement_tips: [
+            'Highlight system design leadership and production architecture achievements.',
+            'Document measurable KPIs such as throughput increases and latency reductions.',
+          ],
+        }
+      }
+
+      const packages: SkillGapPackage[] = missingSkills.slice(0, 4).map((skill, idx) => {
+        const clean = skill.toLowerCase()
+        let docUrl = `https://developer.mozilla.org/en-US/search?q=${encodeURIComponent(skill)}`
+        let vidUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(skill)}+tutorial+for+beginners`
+        let courseUrl = `https://www.coursera.org/search?query=${encodeURIComponent(skill)}`
+
+        if (clean.includes('kuber')) {
+          docUrl = 'https://kubernetes.io/docs/home/'
+          vidUrl = 'https://www.youtube.com/watch?v=X48VuDVv0do'
+          courseUrl = 'https://www.edx.org/learn/kubernetes/the-linux-foundation-introduction-to-kubernetes'
+        } else if (clean.includes('docker')) {
+          docUrl = 'https://docs.docker.com/get-started/'
+          vidUrl = 'https://www.youtube.com/watch?v=fqMOX6JJhGo'
+          courseUrl = 'https://www.coursera.org/learn/ibm-containers-docker-kubernetes-openshift'
+        } else if (clean.includes('aws')) {
+          docUrl = 'https://docs.aws.amazon.com/'
+          vidUrl = 'https://www.youtube.com/watch?v=SOTamWNgDKc'
+          courseUrl = 'https://explore.skillbuilder.aws/'
+        } else if (clean.includes('graph')) {
+          docUrl = 'https://graphql.org/learn/'
+          vidUrl = 'https://www.youtube.com/watch?v=ed8SzALpx1Q'
+          courseUrl = 'https://www.apollographql.com/tutorials/'
+        } else if (clean.includes('react')) {
+          docUrl = 'https://react.dev/learn'
+          vidUrl = 'https://www.youtube.com/watch?v=bMknfKXIFA8'
+          courseUrl = 'https://www.freecodecamp.org/learn/front-end-development-libraries/'
+        } else if (clean.includes('type')) {
+          docUrl = 'https://www.typescriptlang.org/docs/'
+          vidUrl = 'https://www.youtube.com/watch?v=30LWjhZzg50'
+          courseUrl = 'https://www.typescriptlang.org/play'
+        } else if (clean.includes('postg') || clean.includes('sql')) {
+          docUrl = 'https://www.postgresql.org/docs/'
+          vidUrl = 'https://www.youtube.com/watch?v=qw--VYLpxG4'
+          courseUrl = 'https://sqlzoo.net/'
+        }
+
+        return {
+          skill,
+          priority: idx === 0 ? 'HIGH' : idx === 1 ? 'MEDIUM' : 'LOW',
+          reason: `Required core competency requested for the ${jobTitle || 'target'} role.`,
+          difficulty: idx < 2 ? 'Intermediate' : 'Beginner',
+          estimated_learning_hours: idx === 0 ? 12 : 6,
+          suggested_resume_project: `Build and deploy a production-grade application featuring real-world ${skill} integration.`,
+          resources: [
+            {
+              skill,
+              resource_type: 'documentation',
+              title: `${skill} Official Documentation`,
+              provider: 'Official Technology Website',
+              url: docUrl,
+              description: `Comprehensive reference specification and syntax guides for ${skill}.`,
+              duration: 'Self-paced',
+              difficulty: 'Beginner to Advanced',
+              is_free: true,
+            },
+            {
+              skill,
+              resource_type: 'video',
+              title: `${skill} Comprehensive Course Tutorial`,
+              provider: 'freeCodeCamp (YouTube)',
+              url: vidUrl,
+              description: `Hands-on video course with practical step-by-step implementation for ${skill}.`,
+              duration: '3 hours',
+              difficulty: 'Beginner',
+              is_free: true,
+            },
+            {
+              skill,
+              resource_type: 'course',
+              title: `Interactive ${skill} Professional Course`,
+              provider: 'Educational Platform',
+              url: courseUrl,
+              description: `Structured curriculum and guided exercises to build real ${skill} proficiency.`,
+              duration: '8 hours',
+              difficulty: 'Intermediate',
+              is_free: true,
+            },
+          ],
+        }
+      })
+
+      return {
+        has_gaps: true,
+        skill_packages: packages,
+        roadmap: [
+          {
+            step_number: 1,
+            title: `${missingSkills[0]} Fundamentals`,
+            skill: missingSkills[0],
+            difficulty: 'Beginner',
+            estimated_hours: 4,
+            action_item: `Complete the introductory video tutorial and official documentation.`,
+          },
+          {
+            step_number: 2,
+            title: `Hands-on Project with ${missingSkills[0]}`,
+            skill: missingSkills[0],
+            difficulty: 'Intermediate',
+            estimated_hours: 8,
+            action_item: `Implement a standalone GitHub repository demonstrating ${missingSkills[0]}.`,
+          },
+          {
+            step_number: 3,
+            title: 'Resume & Profile Update',
+            skill: 'Career Improvement',
+            difficulty: 'Applied',
+            estimated_hours: 2,
+            action_item: `Add your completed project to your profile and re-evaluate your hiring score.`,
+          },
+        ],
+        resume_improvement_tips: [
+          `Document your genuine ${missingSkills[0]} project in your Projects section with a link to GitHub.`,
+          'Highlight concrete production metrics and system scalability improvements.',
+          'Re-run the AI Hiring Predictor to verify the recalculated match index and hiring probability.',
+        ],
       }
     }
   },

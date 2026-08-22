@@ -9,6 +9,7 @@ import { ScoreBar } from '@/components/ui/ScoreBar'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/lib/supabase'
 import { api, type FitScoreResult } from '@/lib/api'
+import { SkillGapLearningHub } from '@/components/candidate/SkillGapLearningHub'
 import {
   Target,
   Sparkles,
@@ -516,6 +517,14 @@ export default function JobFitPage() {
                       </div>
                     </Card>
                   )}
+
+                  {/* AI Skill Gap Learning Hub */}
+                  <SkillGapLearningHub
+                    missingSkills={missingSkills}
+                    jobTitle={assessmentResult.job_title}
+                    companyName={assessmentResult.company_name}
+                    onReevaluate={handleAnalyze}
+                  />
                 </>
               )
             })()

@@ -9,6 +9,7 @@ import { ScoreBar } from '@/components/ui/ScoreBar'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/lib/supabase'
 import { api, type HiringProbabilityResult } from '@/lib/api'
+import { SkillGapLearningHub } from '@/components/candidate/SkillGapLearningHub'
 import {
   Sparkles,
   Building,
@@ -669,6 +670,14 @@ export default function HiringProbabilityPage() {
                     </div>
                   </Card>
                 </div>
+
+                {/* AI Skill Gap Learning Hub */}
+                <SkillGapLearningHub
+                  missingSkills={predictionResult.missing_required_skills.map((m) => m.skill)}
+                  jobTitle={predictionResult.job_title}
+                  companyName={predictionResult.company_name}
+                  onReevaluate={handlePredict}
+                />
               </>
             ) : (
               <Card className="p-12 text-center border-white/10 space-y-4">
