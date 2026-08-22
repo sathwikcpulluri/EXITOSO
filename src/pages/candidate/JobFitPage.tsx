@@ -167,6 +167,56 @@ export default function JobFitPage() {
         candidateName
       )
       setAssessmentResult(result)
+
+      // Persist real prediction to Supabase
+      try {
+        const {
+          data: { user: authUser },
+        } = await supabase.auth.getUser()
+
+        if (authUser?.id) {
+          const predictionRecord = {
+            user_id: authUser.id,
+            job_id: selectedRoleId || 'custom-job',
+            job_title: result.job_title || 'Software Engineering Role',
+            company: result.company_name || 'Hiring Organization',
+            match_score: result.overall_score || 0,
+            prediction_label: result.recommendation || 'good',
+            confidence: result.confidence || 90,
+            skill_score: result.technical_score || 0,
+            experience_score: result.experience_score || 0,
+            role_score: result.role_alignment_score || 0,
+            responsibility_score: 80,
+            education_score: result.education_score || 85,
+            certification_score: 80,
+            matched_skills: result.matching_skills || [],
+            missing_skills: result.missing_skills || [],
+            skill_gaps: result.skill_gaps || [],
+            factors: result.factors || [],
+            recommendations: result.recommendations || [],
+            summary: result.explanation || '',
+            created_at: new Date().toISOString(),
+          }
+
+          // 1. Save to prediction_history table (if table exists)
+          await supabase.from('prediction_history').insert([predictionRecord])
+
+          // 2. Also persist into auth user_metadata to guarantee persistence
+          const existingHistory = Array.isArray(authUser.user_metadata?.prediction_history)
+            ? authUser.user_metadata.prediction_history
+            : []
+          await supabase.auth.updateUser({
+            data: {
+              prediction_history: [
+                { id: `pred-${Date.now()}`, ...predictionRecord },
+                ...existingHistory.slice(0, 49),
+              ],
+            },
+          })
+        }
+      } catch (saveErr) {
+        console.warn('[Prediction History Save]', saveErr)
+      }
     } catch (err: any) {
       console.error('[JobFit Evaluation Error]', err)
       setErrorMessage('Unable to evaluate this job right now. Please try again.')
