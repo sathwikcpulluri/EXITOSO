@@ -1,0 +1,84 @@
+{
+  "roles": [
+    {
+      "id": "jr-001",
+      "title": "Senior Frontend Engineer",
+      "category": "Technology",
+      "educationRequirement": "Bachelor's in CS or related",
+      "experienceYears": 5,
+      "requiredSkills": ["React", "TypeScript", "JavaScript", "Tailwind CSS", "Redux", "REST APIs", "Git"],
+      "preferredSkills": ["GraphQL", "Next.js", "Docker", "CI/CD"],
+      "salaryRange": "$140,000 - $185,000"
+    },
+    {
+      "id": "jr-002",
+      "title": "Full-Stack Software Engineer",
+      "category": "Technology",
+      "educationRequirement": "Bachelor's in CS or related",
+      "experienceYears": 3,
+      "requiredSkills": ["React", "Node.js", "TypeScript", "PostgreSQL", "REST APIs", "Git"],
+      "preferredSkills": ["AWS", "Docker", "GraphQL", "Agile"],
+      "salaryRange": "$125,000 - $165,000"
+    },
+    {
+      "id": "jr-003",
+      "title": "Lead Software Architect",
+      "category": "Technology",
+      "educationRequirement": "Bachelor's or Master's in CS",
+      "experienceYears": 8,
+      "requiredSkills": ["Microservices", "System Design", "AWS", "Kubernetes", "Docker", "Leadership"],
+      "preferredSkills": ["Terraform", "Go", "Java", "CI/CD"],
+      "salaryRange": "$180,000 - $230,000"
+    },
+    {
+      "id": "jr-004",
+      "title": "Machine Learning Engineer",
+      "category": "Data & AI",
+      "educationRequirement": "Master's or Bachelor's in CS/Data Science",
+      "experienceYears": 4,
+      "requiredSkills": ["Python", "Machine Learning", "PyTorch", "TensorFlow", "Scikit-Learn", "SQL"],
+      "preferredSkills": ["NLP", "Computer Vision", "Docker", "AWS"],
+      "salaryRange": "$150,000 - $195,000"
+    },
+    {
+      "id": "jr-005",
+      "title": "Data Scientist",
+      "category": "Data & AI",
+      "educationRequirement": "Bachelor's or Master's in Statistics/CS",
+      "experienceYears": 3,
+      "requiredSkills": ["Python", "SQL", "Data Analysis", "Pandas", "Scikit-Learn", "Data Visualization"],
+      "preferredSkills": ["Tableau", "Power BI", "Machine Learning", "Deep Learning"],
+      "salaryRange": "$120,000 - $160,000"
+    },
+    {
+      "id": "jr-006",
+      "title": "DevOps & Cloud Engineer",
+      "category": "Infrastructure",
+      "educationRequirement": "Bachelor's in IT/CS",
+      "experienceYears": 4,
+      "requiredSkills": ["AWS", "Docker", "Kubernetes", "CI/CD", "Terraform", "Git"],
+      "preferredSkills": ["Python", "Go", "Cybersecurity", "Microservices"],
+      "salaryRange": "$135,000 - $175,000"
+    },
+    {
+      "id": "jr-007",
+      "title": "Product Manager",
+      "category": "Product",
+      "educationRequirement": "Bachelor's in Business/CS",
+      "experienceYears": 4,
+      "requiredSkills": ["Product Strategy", "Project Management", "Agile", "Scrum", "Communication", "Leadership"],
+      "preferredSkills": ["Data Analysis", "UI/UX Design", "Figma"],
+      "salaryRange": "$130,000 - $170,000"
+    },
+    {
+      "id": "jr-008",
+      "title": "UI/UX Product Designer",
+      "category": "Design",
+      "educationRequirement": "Bachelor's in Design/HCI",
+      "experienceYears": 3,
+      "requiredSkills": ["UI/UX Design", "Figma", "Communication", "Teamwork", "Problem Solving"],
+      "preferredSkills": ["Tailwind CSS", "React", "User Research"],
+      "salaryRange": "$105,000 - $145,000"
+    }
+  ]
+}

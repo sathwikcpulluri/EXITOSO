@@ -1,0 +1,99 @@
+import { createBrowserRouter, Navigate } from 'react-router-dom'
+import { lazy, Suspense } from 'react'
+import { AppLayout } from '@/components/layout/AppLayout'
+import { AuthLayout } from '@/components/layout/AuthLayout'
+import { ProtectedRoute } from '@/components/layout/ProtectedRoute'
+import { Spinner } from '@/components/ui/Spinner'
+
+// Lazy load pages
+const LandingPage = lazy(() => import('@/pages/shared/LandingPage'))
+const NotFoundPage = lazy(() => import('@/pages/shared/NotFoundPage'))
+const UnauthorizedPage = lazy(() => import('@/pages/shared/UnauthorizedPage'))
+
+// Candidate pages
+const CandidateDashboard = lazy(() => import('@/pages/candidate/DashboardPage'))
+const CandidateProfile = lazy(() => import('@/pages/candidate/ProfilePage'))
+const CandidateOnboarding = lazy(() => import('@/pages/candidate/OnboardingPage'))
+const JobFitPage = lazy(() => import('@/pages/candidate/JobFitPage'))
+const FitHistoryPage = lazy(() => import('@/pages/candidate/FitHistoryPage'))
+const InterviewPrepPage = lazy(() => import('@/pages/candidate/InterviewPrepPage'))
+const PracticeSessionPage = lazy(() => import('@/pages/candidate/PracticeSessionPage'))
+const PracticeHistoryPage = lazy(() => import('@/pages/candidate/PracticeHistoryPage'))
+const JobRecommendationsPage = lazy(() => import('@/pages/candidate/JobRecommendationsPage'))
+const SettingsPage = lazy(() => import('@/pages/candidate/SettingsPage'))
+
+// Auth pages
+const LoginPage = lazy(() => import('@/pages/auth/LoginPage'))
+const RegisterPage = lazy(() => import('@/pages/auth/RegisterPage'))
+
+function LazyWrapper({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <Spinner size="lg" />
+        </div>
+      }
+    >
+      {children}
+    </Suspense>
+  )
+}
+
+export const router = createBrowserRouter([
+  // Public routes
+  {
+    path: '/',
+    element: <LazyWrapper><LandingPage /></LazyWrapper>,
+  },
+
+  // Auth routes
+  {
+    path: '/auth',
+    element: <AuthLayout />,
+    children: [
+      { path: 'login', element: <LazyWrapper><LoginPage /></LazyWrapper> },
+      { path: 'register', element: <LazyWrapper><RegisterPage /></LazyWrapper> },
+    ],
+  },
+
+  // Candidate routes
+  {
+    path: '/candidate',
+    element: (
+      <ProtectedRoute allowedRoles={['candidate']}>
+        <AppLayout />
+      </ProtectedRoute>
+    ),
+    children: [
+      { index: true, element: <Navigate to="dashboard" replace /> },
+      { path: 'dashboard', element: <LazyWrapper><CandidateDashboard /></LazyWrapper> },
+      { path: 'profile', element: <LazyWrapper><CandidateProfile /></LazyWrapper> },
+      { path: 'onboarding', element: <LazyWrapper><CandidateOnboarding /></LazyWrapper> },
+      { path: 'job-fit', element: <LazyWrapper><JobFitPage /></LazyWrapper> },
+      { path: 'fit-history', element: <LazyWrapper><FitHistoryPage /></LazyWrapper> },
+      { path: 'interview-prep', element: <LazyWrapper><InterviewPrepPage /></LazyWrapper> },
+      { path: 'practice', element: <LazyWrapper><PracticeSessionPage /></LazyWrapper> },
+      { path: 'practice-history', element: <LazyWrapper><PracticeHistoryPage /></LazyWrapper> },
+      { path: 'recommendations', element: <LazyWrapper><JobRecommendationsPage /></LazyWrapper> },
+      { path: 'settings', element: <LazyWrapper><SettingsPage /></LazyWrapper> },
+    ],
+  },
+
+  // Settings redirect
+  {
+    path: '/settings',
+    element: (
+      <ProtectedRoute allowedRoles={['candidate']}>
+        <AppLayout />
+      </ProtectedRoute>
+    ),
+    children: [
+      { index: true, element: <LazyWrapper><SettingsPage /></LazyWrapper> },
+    ],
+  },
+
+  // Error pages
+  { path: '/unauthorized', element: <LazyWrapper><UnauthorizedPage /></LazyWrapper> },
+  { path: '*', element: <LazyWrapper><NotFoundPage /></LazyWrapper> },
+])
