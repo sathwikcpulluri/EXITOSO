@@ -35,6 +35,7 @@ export default function RegisterPage() {
 
   // Form level states
   const [generalError, setGeneralError] = useState('')
+  const [showLoginLink, setShowLoginLink] = useState(false)
   const [successMessage, setSuccessMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
 
@@ -43,7 +44,10 @@ export default function RegisterPage() {
 
   const handleNameChange = (val: string) => {
     setFullName(val)
-    if (generalError) setGeneralError('')
+    if (generalError) {
+      setGeneralError('')
+      setShowLoginLink(false)
+    }
     if (nameError) {
       const res = validateFullName(val)
       setNameError(res.isValid ? '' : res.error || '')
@@ -52,7 +56,10 @@ export default function RegisterPage() {
 
   const handleEmailChange = (val: string) => {
     setEmail(val)
-    if (generalError) setGeneralError('')
+    if (generalError) {
+      setGeneralError('')
+      setShowLoginLink(false)
+    }
     if (emailError) {
       const res = validateGmail(val)
       setEmailError(res.isValid ? '' : res.error || '')
@@ -61,7 +68,10 @@ export default function RegisterPage() {
 
   const handlePasswordChange = (val: string) => {
     setPassword(val)
-    if (generalError) setGeneralError('')
+    if (generalError) {
+      setGeneralError('')
+      setShowLoginLink(false)
+    }
     if (passwordError) {
       const res = validatePassword(val)
       setPasswordError(res.isValid ? '' : res.error || '')
@@ -77,6 +87,7 @@ export default function RegisterPage() {
     }
 
     setGeneralError('')
+    setShowLoginLink(false)
     setSuccessMessage('')
 
     // 1. FRONTEND VALIDATIONS
@@ -133,20 +144,21 @@ export default function RegisterPage() {
 
         const msg = (error.message || '').toLowerCase()
 
-        if (error.status === 429) {
-          setGeneralError('Too many signup attempts. Please wait a few minutes before trying again.')
+        if (error.status === 429 || msg.includes('over_email_send_rate_limit') || msg.includes('rate limit')) {
+          setGeneralError('Supabase email rate limit exceeded for this address. If you already created an account, please Sign In.')
+          setShowLoginLink(true)
         } else if (
           msg.includes('already registered') ||
           msg.includes('user already exists') ||
           msg.includes('identity already exists')
         ) {
-          setGeneralError('An account with this email already exists. Please sign in.')
+          setGeneralError('An account with this email already exists.')
+          setShowLoginLink(true)
         } else if (msg.includes('password') && (msg.includes('weak') || msg.includes('least') || msg.includes('short'))) {
           setPasswordError('Password must be at least 8 characters.')
         } else if (msg.includes('network') || msg.includes('fetch')) {
           setGeneralError('Unable to connect. Please check your internet connection and try again.')
         } else {
-          // Display the real Supabase error message directly
           setGeneralError(error.message || 'Unable to create your account. Please try again.')
         }
         return
@@ -228,6 +240,7 @@ export default function RegisterPage() {
     setEmailError('')
     setPasswordError('')
     setGeneralError('')
+    setShowLoginLink(false)
     setSuccessMessage('')
   }
 
@@ -242,9 +255,22 @@ export default function RegisterPage() {
 
       {/* General Error Banner */}
       {generalError && (
-        <div className="p-3.5 rounded-xl bg-rose-950/50 border border-rose-500/40 text-xs text-rose-200 flex items-start gap-2.5 animate-fade-in">
-          <AlertCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
-          <span className="leading-relaxed font-medium">{generalError}</span>
+        <div className="p-3.5 rounded-xl bg-rose-950/50 border border-rose-500/40 text-xs text-rose-200 space-y-2 animate-fade-in">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+            <span className="leading-relaxed font-medium">{generalError}</span>
+          </div>
+
+          {showLoginLink && (
+            <div className="pt-1.5 border-t border-rose-500/20 flex items-center justify-end">
+              <Link
+                to="/auth/login"
+                className="inline-flex items-center gap-1 font-bold text-orange-400 hover:text-orange-300 transition-colors"
+              >
+                Go to Sign In <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
+          )}
         </div>
       )}
 
