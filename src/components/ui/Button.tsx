@@ -11,17 +11,22 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantStyles: Record<string, string> = {
-  primary: 'bg-gradient-brand text-white hover:opacity-90 shadow-md hover:shadow-glow active:scale-[0.98]',
-  secondary: 'bg-surface-100 text-surface-700 hover:bg-surface-200 border border-surface-200',
-  ghost: 'text-surface-600 hover:bg-surface-100 hover:text-surface-900',
-  danger: 'bg-rose-500 text-white hover:bg-rose-600 shadow-sm',
-  outline: 'border-2 border-primary-600 text-primary-600 hover:bg-primary-50',
+  primary:
+    'btn-futuristic bg-black text-white font-bold hover:shadow-[0_0_24px_rgba(230,0,122,0.45)] active:scale-[0.98]',
+  secondary:
+    'bg-surface-900 text-white font-semibold hover:bg-surface-800 border border-surface-700 shadow-sm active:scale-[0.98]',
+  ghost:
+    'text-surface-700 hover:bg-surface-100 hover:text-surface-900 font-semibold active:scale-[0.98]',
+  danger:
+    'btn-futuristic-danger bg-black text-white font-bold hover:shadow-[0_0_20px_rgba(239,68,68,0.45)] active:scale-[0.98]',
+  outline:
+    'btn-futuristic-outline text-surface-900 font-bold hover:bg-black hover:text-white active:scale-[0.98]',
 }
 
 const sizeStyles: Record<string, string> = {
-  sm: 'px-3 py-1.5 text-sm gap-1.5',
-  md: 'px-4 py-2.5 text-sm gap-2',
-  lg: 'px-6 py-3 text-base gap-2.5',
+  sm: 'px-3.5 py-1.5 text-xs gap-1.5 rounded-xl',
+  md: 'px-5 py-2.5 text-sm gap-2 rounded-2xl',
+  lg: 'px-7 py-3.5 text-base gap-2.5 rounded-2xl',
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
@@ -30,7 +35,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       <button
         ref={ref}
         className={cn(
-          'inline-flex items-center justify-center font-medium rounded-xl transition-all duration-200 focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none',
+          'inline-flex items-center justify-center font-bold transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none tracking-wide select-none',
           variantStyles[variant],
           sizeStyles[size],
           className
@@ -39,7 +44,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         {...props}
       >
         {loading ? (
-          <Spinner size="sm" className="mr-2" />
+          <Spinner size="sm" className="mr-2 text-white" />
         ) : leftIcon ? (
           <span className="shrink-0">{leftIcon}</span>
         ) : null}
