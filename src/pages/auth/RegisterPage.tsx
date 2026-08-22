@@ -108,13 +108,17 @@ export default function RegisterPage() {
         },
       })
 
-      // 4. HANDLE SUPABASE ERRORS
+      // 4. HANDLE SUPABASE AUTH ERRORS
       if (error) {
         setIsLoading(false)
-        console.error('[Supabase Auth Error]', error.message)
+        console.error('[Supabase Auth Error]', {
+          message: error.message,
+          status: error.status,
+          name: error.name,
+        })
 
         const msg = error.message.toLowerCase()
-        if (msg.includes('already registered') || msg.includes('user already exists')) {
+        if (msg.includes('already registered') || msg.includes('user already exists') || msg.includes('identity already exists')) {
           setGeneralError('An account with this email already exists. Please sign in.')
         } else if (msg.includes('password') && (msg.includes('weak') || msg.includes('least'))) {
           setPasswordError('Password must be at least 8 characters.')
@@ -137,27 +141,39 @@ export default function RegisterPage() {
 
       const sbUser = data.user
 
-      // 5. DATABASE PROFILE CREATION
+      // 5. CHECK EMAIL VERIFICATION STATE (Case B: Session is null because email confirmation is enabled)
+      if (!data.session) {
+        setIsLoading(false)
+        setSuccessMessage('Account created. Please check your email to verify your account.')
+        return
+      }
+
+      // 6. DATABASE PROFILE CREATION (Case A: Active session present)
       const { error: profileError } = await supabase.from('profiles').upsert({
         id: sbUser.id,
         email: sbUser.email || cleanEmail,
         full_name: cleanName,
         role: 'candidate',
         created_at: new Date().toISOString(),
-      })
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'id' })
 
       if (profileError) {
-        console.error('[Supabase Profile Creation Error]', profileError.message)
+        console.error('[Supabase Profile Upsert Error]', {
+          code: profileError.code,
+          message: profileError.message,
+          details: profileError.details,
+          hint: profileError.hint,
+        })
         setIsLoading(false)
-        setGeneralError('Account was created, but profile setup failed. Please try again.')
-        return
-      }
 
-      // 6. CHECK EMAIL VERIFICATION CONFIGURATION
-      // If Supabase has email confirmation enabled, session is null until verified
-      if (!data.session) {
-        setIsLoading(false)
-        setSuccessMessage('Account created. Please check your email to verify your account.')
+        if (profileError.code === '42501') {
+          setGeneralError('Your account was created, but your profile could not be initialized. Please check RLS permissions or try again.')
+        } else if (profileError.code === '42P01') {
+          setGeneralError('Profile service is not configured correctly. Database table is missing.')
+        } else {
+          setGeneralError(`Account was created, but profile setup failed: ${profileError.message}`)
+        }
         return
       }
 
@@ -175,7 +191,9 @@ export default function RegisterPage() {
       navigate('/candidate/onboarding')
     } catch (err: any) {
       setIsLoading(false)
-      console.error('[CareerAI Signup Exception]', err)
+      console.error('[CareerAI Signup Exception]', {
+        message: err?.message || 'Unknown error',
+      })
       setGeneralError('Unable to connect. Please check your internet connection and try again.')
     }
   }
