@@ -1,16 +1,16 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
-import { lazy, Suspense } from 'react'
+import { lazy } from 'react'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { AuthLayout } from '@/components/layout/AuthLayout'
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute'
-import { Spinner } from '@/components/ui/Spinner'
+import { LazyWrapper } from '@/components/layout/LazyWrapper'
 
-// Lazy load pages
+// Lazy load shared pages
 const LandingPage = lazy(() => import('@/pages/shared/LandingPage'))
 const NotFoundPage = lazy(() => import('@/pages/shared/NotFoundPage'))
 const UnauthorizedPage = lazy(() => import('@/pages/shared/UnauthorizedPage'))
 
-// Candidate pages
+// Lazy load candidate pages
 const CandidateDashboard = lazy(() => import('@/pages/candidate/DashboardPage'))
 const CandidateProfile = lazy(() => import('@/pages/candidate/ProfilePage'))
 const CandidateOnboarding = lazy(() => import('@/pages/candidate/OnboardingPage'))
@@ -22,23 +22,9 @@ const PracticeHistoryPage = lazy(() => import('@/pages/candidate/PracticeHistory
 const JobRecommendationsPage = lazy(() => import('@/pages/candidate/JobRecommendationsPage'))
 const SettingsPage = lazy(() => import('@/pages/candidate/SettingsPage'))
 
-// Auth pages
+// Lazy load auth pages
 const LoginPage = lazy(() => import('@/pages/auth/LoginPage'))
 const RegisterPage = lazy(() => import('@/pages/auth/RegisterPage'))
-
-function LazyWrapper({ children }: { children: React.ReactNode }) {
-  return (
-    <Suspense
-      fallback={
-        <div className="flex items-center justify-center min-h-[50vh]">
-          <Spinner size="lg" />
-        </div>
-      }
-    >
-      {children}
-    </Suspense>
-  )
-}
 
 export const router = createBrowserRouter([
   // Public routes
