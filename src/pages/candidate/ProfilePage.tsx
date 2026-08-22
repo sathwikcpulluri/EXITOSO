@@ -37,7 +37,7 @@ export default function CandidateProfilePage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Real profile data states (Loaded strictly from Supabase)
-  const [candidateName, setCandidateName] = useState(user?.fullName || '')
+  const [candidateName, setCandidateName] = useState('')
   const [headline, setHeadline] = useState('')
   const [location, setLocation] = useState('')
   const [experienceYears, setExperienceYears] = useState<number>(0)
@@ -67,62 +67,89 @@ export default function CandidateProfilePage() {
   // Fetch authenticated user's profile from Supabase on mount
   useEffect(() => {
     async function loadUserProfile() {
-      if (!user?.id) {
-        setIsLoadingProfile(false)
-        return
-      }
-
       setIsLoadingProfile(true)
       try {
+        // 1. Always retrieve active authenticated user session from Supabase
+        const {
+          data: { user: authUser },
+          error: authError,
+        } = await supabase.auth.getUser()
+
+        if (authError || !authUser) {
+          setIsLoadingProfile(false)
+          return
+        }
+
+        // 2. Query public.profiles
         const { data, error } = await supabase
           .from('profiles')
           .select('*')
-          .eq('id', user.id)
+          .eq('id', authUser.id)
           .single()
 
         if (error) {
           console.warn('[Supabase Profile Load Warning]', error.message)
-        } else if (data) {
-          if (data.full_name) setCandidateName(data.full_name)
-          setHeadline(data.headline || '')
-          setLocation(data.location || '')
-          setExperienceYears(Number(data.experience_years) || 0)
-          setResumeFilename(data.resume_filename || null)
-          setParsingConfidence(Number(data.parsing_confidence) || 0)
+        }
 
-          if (Array.isArray(data.skills)) {
-            setSkills(
-              typeof data.skills[0] === 'string'
-                ? data.skills.map((s: string) => ({ name: s, category: 'technical' }))
-                : data.skills
-            )
+        const meta = authUser.user_metadata || {}
+
+        // 3. Populate state combining database row and auth user metadata
+        const finalName = data?.full_name || meta.full_name || meta.name || user?.fullName || ''
+        const finalHeadline = data?.headline || meta.headline || ''
+        const finalLocation = data?.location || meta.location || ''
+        const finalYears = data?.experience_years !== undefined ? Number(data.experience_years) : (meta.experience_years ?? 0)
+        const finalResume = data?.resume_filename || meta.resume_filename || null
+        const finalConfidence = Number(data?.parsing_confidence) || Number(meta.parsing_confidence) || 0
+
+        setCandidateName(finalName)
+        setHeadline(finalHeadline)
+        setLocation(finalLocation)
+        setExperienceYears(finalYears)
+        setResumeFilename(finalResume)
+        setParsingConfidence(finalConfidence)
+
+        // Skills
+        const rawSkills = data?.skills || meta.skills
+        if (Array.isArray(rawSkills)) {
+          setSkills(
+            typeof rawSkills[0] === 'string'
+              ? rawSkills.map((s: string) => ({ name: s, category: 'technical' }))
+              : rawSkills
+          )
+        }
+
+        // Experience
+        const rawExp = data?.experience || meta.experience
+        if (Array.isArray(rawExp)) {
+          setExperience(rawExp)
+        }
+
+        // Education
+        const rawEdu = data?.education || meta.education
+        if (Array.isArray(rawEdu)) {
+          setEducation(rawEdu)
+        }
+
+        // Certifications
+        const rawCerts = data?.certifications || meta.certifications
+        if (Array.isArray(rawCerts)) {
+          setCertifications(rawCerts)
+        }
+
+        // Preferences
+        const rawPrefs = data?.preferences || meta.preferences
+        if (rawPrefs) {
+          if (Array.isArray(rawPrefs.workType)) {
+            setWorkTypes(rawPrefs.workType)
           }
-
-          if (Array.isArray(data.experience)) {
-            setExperience(data.experience)
+          if (Array.isArray(rawPrefs.industries)) {
+            setTargetIndustries(rawPrefs.industries.join(', '))
           }
-
-          if (Array.isArray(data.education)) {
-            setEducation(data.education)
+          if (rawPrefs.salaryMin) {
+            setSalaryMin(String(rawPrefs.salaryMin))
           }
-
-          if (Array.isArray(data.certifications)) {
-            setCertifications(data.certifications)
-          }
-
-          if (data.preferences) {
-            if (Array.isArray(data.preferences.workType)) {
-              setWorkTypes(data.preferences.workType)
-            }
-            if (Array.isArray(data.preferences.industries)) {
-              setTargetIndustries(data.preferences.industries.join(', '))
-            }
-            if (data.preferences.salaryMin) {
-              setSalaryMin(String(data.preferences.salaryMin))
-            }
-            if (data.preferences.salaryMax) {
-              setSalaryMax(String(data.preferences.salaryMax))
-            }
+          if (rawPrefs.salaryMax) {
+            setSalaryMax(String(rawPrefs.salaryMax))
           }
         }
       } catch (err) {
@@ -145,7 +172,7 @@ export default function CandidateProfilePage() {
     return Math.min(score, 100)
   }
 
-  // Save changes to Supabase with dynamic self-healing column recovery
+  // Save changes to Supabase with dual-layer persistence (profiles table + auth user_metadata)
   const handleSave = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
 
@@ -166,9 +193,17 @@ export default function CandidateProfilePage() {
         return
       }
 
-      // 2. Build complete desired payload
-      const payload: Record<string, any> = {
-        full_name: candidateName || user?.fullName,
+      const currentFullName = candidateName.trim() || user?.fullName || ''
+      const preferencesObj = {
+        workType: workTypes,
+        industries: targetIndustries.split(',').map((s) => s.trim()).filter(Boolean),
+        salaryMin: Number(salaryMin) || 0,
+        salaryMax: Number(salaryMax) || 0,
+      }
+
+      // 2. Build complete desired payload for public.profiles
+      const tablePayload: Record<string, any> = {
+        full_name: currentFullName,
         headline: headline || null,
         location: location || null,
         experience_years: experienceYears,
@@ -176,55 +211,56 @@ export default function CandidateProfilePage() {
         experience,
         education,
         certifications,
-        preferences: {
-          workType: workTypes,
-          industries: targetIndustries.split(',').map((s) => s.trim()).filter(Boolean),
-          salaryMin: Number(salaryMin) || 0,
-          salaryMax: Number(salaryMax) || 0,
-        },
+        preferences: preferencesObj,
         resume_filename: resumeFilename,
         parsing_confidence: parsingConfidence,
         updated_at: new Date().toISOString(),
       }
 
-      // 3. Dynamic self-healing save loop: automatically prunes unmigrated columns
-      let saveError: string | null = null
-      let isSaved = false
-
+      // 3. Save to public.profiles with self-healing column recovery loop
       for (let attempt = 0; attempt < 12; attempt++) {
-        const { error } = await supabase
+        const { error: dbError } = await supabase
           .from('profiles')
-          .update(payload)
+          .update(tablePayload)
           .eq('id', targetUserId)
 
-        if (!error) {
-          isSaved = true
-          break
-        }
+        if (!dbError) break
 
-        // Detect missing column error from PostgREST schema cache
-        const match = error.message.match(/Could not find the '([^']+)' column/i)
-        if (match && match[1] && match[1] in payload) {
-          const missingCol = match[1]
-          console.warn(`[Profile Save] Column '${missingCol}' missing in profiles table. Retrying without it...`)
-          delete payload[missingCol]
+        const match = dbError.message.match(/Could not find the '([^']+)' column/i)
+        if (match && match[1] && match[1] in tablePayload) {
+          delete tablePayload[match[1]]
           continue
         }
-
-        saveError = error.message
         break
       }
 
-      if (!isSaved && saveError) {
-        console.error('[Supabase Save Profile Error]', saveError)
-        setErrorMessage(`Failed to save changes: ${saveError}`)
-      } else {
-        if (candidateName && candidateName !== user?.fullName) {
-          if (user) setUser({ ...user, fullName: candidateName })
-        }
-        setSaveSuccess('Changes saved successfully.')
-        setTimeout(() => setSaveSuccess(''), 4000)
+      // 4. Also store directly in Supabase Auth user_metadata to guarantee persistence across relogins
+      try {
+        await supabase.auth.updateUser({
+          data: {
+            full_name: currentFullName,
+            headline,
+            location,
+            experience_years: experienceYears,
+            skills,
+            experience,
+            education,
+            certifications,
+            preferences: preferencesObj,
+            resume_filename: resumeFilename,
+            parsing_confidence: parsingConfidence,
+          },
+        })
+      } catch (authMetaErr) {
+        console.warn('[Supabase Auth Meta Update]', authMetaErr)
       }
+
+      if (user) {
+        setUser({ ...user, fullName: currentFullName })
+      }
+
+      setSaveSuccess('Profile saved successfully.')
+      setTimeout(() => setSaveSuccess(''), 4000)
     } catch (err: any) {
       console.error('[CareerAI Save Exception]', err)
       setErrorMessage('Unable to connect. Please check your internet connection.')
@@ -244,7 +280,17 @@ export default function CandidateProfilePage() {
     const file = e.target.files?.[0]
     e.target.value = ''
 
-    if (!file || !user?.id) return
+    if (!file) return
+
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser()
+    const targetUserId = authUser?.id || user?.id
+
+    if (!targetUserId) {
+      setErrorMessage('Please sign in before uploading a resume.')
+      return
+    }
 
     setErrorMessage('')
     setSaveSuccess('')
@@ -267,9 +313,9 @@ export default function CandidateProfilePage() {
     setIsParsingResume(true)
 
     try {
-      // 2. Upload to Supabase Storage (if configured)
+      // 2. Upload to Supabase Storage
       const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-      const storagePath = `${user.id}/${Date.now()}_${sanitizedName}`
+      const storagePath = `${targetUserId}/${Date.now()}_${sanitizedName}`
 
       try {
         await supabase.storage
@@ -297,25 +343,19 @@ export default function CandidateProfilePage() {
         category: s.category || 'technical',
       }))
 
+      const newFullName = parseResult.full_name || candidateName || user?.fullName || ''
+      const newHeadline =
+        parseResult.headline ||
+        (parsedSkillItems.length > 0 ? `${parsedSkillItems.slice(0, 3).map((s) => s.name).join(', ')} Professional` : '')
+      const newLocation = parseResult.location || location || ''
+      const newYears = parseResult.years_experience ?? experienceYears
+
       if (parseResult.full_name) {
         setCandidateName(parseResult.full_name)
-        setUser({ ...user, fullName: parseResult.full_name })
       }
-
-      if (parseResult.headline) {
-        setHeadline(parseResult.headline)
-      } else if (parsedSkillItems.length > 0) {
-        setHeadline(`${parsedSkillItems.slice(0, 3).map((s) => s.name).join(', ')} Professional`)
-      }
-
-      if (parseResult.location) {
-        setLocation(parseResult.location)
-      }
-
-      if (parseResult.years_experience !== undefined) {
-        setExperienceYears(parseResult.years_experience)
-      }
-
+      if (newHeadline) setHeadline(newHeadline)
+      if (newLocation) setLocation(newLocation)
+      setExperienceYears(newYears)
       setSkills(parsedSkillItems)
       setExperience(parseResult.work_experience || [])
       setEducation(parseResult.education || [])
@@ -323,12 +363,12 @@ export default function CandidateProfilePage() {
       setResumeFilename(file.name)
       setParsingConfidence(parseResult.confidence || 0)
 
-      // 6. Persist extracted profile directly to Supabase with self-healing recovery
+      // 6. Persist directly to Supabase table
       const updatePayload: Record<string, any> = {
-        full_name: parseResult.full_name || candidateName || user?.fullName,
-        headline: parseResult.headline || (parsedSkillItems.length > 0 ? `${parsedSkillItems.slice(0, 3).map((s) => s.name).join(', ')} Professional` : null),
-        location: parseResult.location || location || null,
-        experience_years: parseResult.years_experience ?? experienceYears,
+        full_name: newFullName,
+        headline: newHeadline,
+        location: newLocation,
+        experience_years: newYears,
         skills: parsedSkillItems,
         experience: parseResult.work_experience || [],
         education: parseResult.education || [],
@@ -342,7 +382,7 @@ export default function CandidateProfilePage() {
         const { error } = await supabase
           .from('profiles')
           .update(updatePayload)
-          .eq('id', user.id)
+          .eq('id', targetUserId)
 
         if (!error) break
 
@@ -352,6 +392,26 @@ export default function CandidateProfilePage() {
           continue
         }
         break
+      }
+
+      // 7. Persist in auth user_metadata
+      try {
+        await supabase.auth.updateUser({
+          data: {
+            full_name: newFullName,
+            headline: newHeadline,
+            location: newLocation,
+            experience_years: newYears,
+            skills: parsedSkillItems,
+            experience: parseResult.work_experience || [],
+            education: parseResult.education || [],
+            certifications: parseResult.certifications || [],
+            resume_filename: file.name,
+            parsing_confidence: parseResult.confidence || 0,
+          },
+        })
+      } catch (authErr) {
+        console.warn('[Auth Meta update on resume]', authErr)
       }
 
       setSaveSuccess('Resume analyzed successfully.')
