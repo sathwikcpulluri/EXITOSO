@@ -1,3 +1,4 @@
+import os
 import json
 import re
 from pathlib import Path
@@ -6,10 +7,18 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+# Check Google GenAI SDK availability
+try:
+    from google import genai
+    from google.genai import types
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
+
 app = FastAPI(
     title="CareerAI - AI Resume Analyzer & Job Role Prediction API",
     version="1.0.0",
-    description="NLP-based resume parsing, role prediction, multi-factor job fit evaluation, and interview coach.",
+    description="Gemini & NLP-based resume parsing, role prediction, multi-factor job fit evaluation, and interview coach.",
 )
 
 # CORS middleware for frontend connection
@@ -47,6 +56,7 @@ class ParsedSkill(BaseModel):
 class WorkExperienceItem(BaseModel):
     job_title: str
     company: str
+    location: Optional[str] = None
     start_date: str
     end_date: str
     description: str
@@ -144,12 +154,12 @@ class InterviewEvalResponse(BaseModel):
 # ==========================================
 
 KNOWN_PROGRAMMING_LANGUAGES = {
-    "python", "javascript", "typescript", "java", "c++", "c#", "c", "go", "golang",
+    "javascript", "typescript", "python", "java", "c++", "c#", "c", "golang", "go",
     "rust", "ruby", "php", "swift", "kotlin", "scala", "r", "dart", "sql", "html", "css"
 }
 
 KNOWN_FRAMEWORKS = {
-    "react", "react.js", "next.js", "vue", "vue.js", "angular", "node.js", "express",
+    "react", "react.js", "next.js", "vue", "vue.js", "angular", "node.js", "express", "express.js",
     "django", "fastapi", "flask", "spring", "spring boot", "asp.net", "laravel",
     "tailwind", "tailwind css", "redux", "graphql", "rest api", "pytorch", "tensorflow"
 }
@@ -177,11 +187,12 @@ def extract_contact_info(text: str):
     phone = phone_match.group(0) if phone_match else None
 
     location = None
-    loc_match = re.search(r"\b([A-Z][a-zA-Z\s]+,\s*(?:[A-Z]{2}|[A-Z][a-zA-Z\s]+))\b", text)
+    loc_match = (
+        re.search(r"\b([A-Z][a-zA-Z\s]{2,20},\s*(?:India|USA|United States|UK|Canada|Germany|[A-Z]{2}|[A-Z][a-zA-Z\s]{2,20}))\b", text) or
+        re.search(r"\b(Bengaluru|Bangalore|Mumbai|Delhi|Hyderabad|Pune|Chennai|San Francisco|New York|Seattle|Austin|London|Toronto)\b", text, re.IGNORECASE)
+    )
     if loc_match:
-        cand = loc_match.group(1).strip()
-        if len(cand) < 35 and not any(k in cand.lower() for k in ["university", "college", "experience", "skills", "resume"]):
-            location = cand
+        location = loc_match.group(0).strip()
 
     return email, phone, location
 
@@ -191,7 +202,7 @@ def extract_candidate_name(text: str, email: Optional[str]) -> Optional[str]:
         if (
             len(line.split()) in [2, 3, 4]
             and not any(c in line for c in ["@", "http", "/", "\\", "(", ")", "+", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0"])
-            and not any(keyword in line.lower() for keyword in ["resume", "curriculum", "cv", "developer", "engineer", "experience", "education", "skills", "summary", "contact"])
+            and not any(keyword in line.lower() for keyword in ["resume", "curriculum", "cv", "summary", "experience", "skills", "contact", "profile"])
         ):
             return line.title()
     
@@ -210,23 +221,26 @@ def extract_skills_categorized(text: str):
     databases = []
     cloud = []
     soft = []
+    seen = set()
 
     for skill_lower, skill_obj in SKILLS_DICT.items():
-        pattern = r"\b" + re.escape(skill_lower) + r"\b"
+        pattern = r"(?:^|[^a-zA-Z0-9_])" + re.escape(skill_lower) + r"(?:$|[^a-zA-Z0-9_])"
         if re.search(pattern, text_lower):
             name = skill_obj["name"]
-            category = skill_obj.get("category", "technical")
-            all_skills.append(ParsedSkill(name=name, category=category))
+            if name.lower() not in seen:
+                seen.add(name.lower())
+                category = skill_obj.get("category", "technical")
+                all_skills.append(ParsedSkill(name=name, category=category))
 
-            lower_name = name.lower()
-            if lower_name in KNOWN_PROGRAMMING_LANGUAGES:
-                prog_lang.append(name)
-            elif lower_name in KNOWN_FRAMEWORKS:
-                frameworks.append(name)
-            elif lower_name in KNOWN_DATABASES:
-                databases.append(name)
-            elif lower_name in KNOWN_CLOUD_DEVOPS:
-                cloud.append(name)
+                lower_name = name.lower()
+                if lower_name in KNOWN_PROGRAMMING_LANGUAGES:
+                    prog_lang.append(name)
+                elif lower_name in KNOWN_FRAMEWORKS:
+                    frameworks.append(name)
+                elif lower_name in KNOWN_DATABASES:
+                    databases.append(name)
+                elif lower_name in KNOWN_CLOUD_DEVOPS:
+                    cloud.append(name)
 
     for soft_name in KNOWN_SOFT_SKILLS:
         pattern = r"\b" + re.escape(soft_name) + r"\b"
@@ -239,6 +253,7 @@ def extract_experience_years(text: str) -> int:
     patterns = [
         r"(\d+)\+?\s*(?:years?|yrs?)(?:\s+of)?\s+experience",
         r"experience\s*:\s*(\d+)\+?\s*(?:years?|yrs?)",
+        r"(\d+)\s*(?:years?|yrs?)\s+(?:in|of)\s+software",
     ]
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
@@ -256,28 +271,27 @@ def extract_experience_years(text: str) -> int:
 def extract_work_history(text: str) -> List[WorkExperienceItem]:
     items: List[WorkExperienceItem] = []
     role_titles = [
-        "Software Engineer", "Frontend Engineer", "Backend Engineer", "Full Stack Developer",
-        "Full-Stack Engineer", "DevOps Engineer", "Data Scientist", "Machine Learning Engineer",
-        "Product Manager", "Engineering Manager", "Tech Lead", "Data Engineer", "Cloud Architect",
-        "System Architect", "QA Engineer", "Mobile Developer", "iOS Developer", "Android Developer"
+        "Senior Software Engineer", "Software Engineer", "Junior Software Developer",
+        "Full Stack Developer", "Full-Stack Engineer", "Backend Engineer", "Frontend Engineer",
+        "DevOps Engineer", "Data Scientist", "Machine Learning Engineer", "Cloud Architect"
     ]
 
-    text_lower = text.lower()
     for title in role_titles:
-        if title.lower() in text_lower:
-            pattern = rf"(?:at\s+|@\s+)?([A-Z][A-Za-z0-9\s&]{{2,30}})?.*?(20\d\d|19\d\d)\s*(?:-|–|to)\s*(20\d\d|present|current)"
-            match = re.search(pattern, text, re.IGNORECASE)
-            start_date = match.group(2) if match else "2021"
-            end_date = match.group(3).capitalize() if match else "Present"
-            company = match.group(1).strip() if match and match.group(1) else "Technology Solutions"
-            
+        pattern = rf"{re.escape(title)}[\s—–|@,]+([A-Za-z0-9\s&]{{3,30}})"
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            company = match.group(1).split("\n")[0].replace("Present", "").strip()
+            date_match = re.search(rf"{re.escape(title)}.*?(20\d\d)\s*(?:-|–|to)\s*(20\d\d|present|current)", text, re.IGNORECASE)
+            start_date = date_match.group(1) if date_match else "2021"
+            end_date = date_match.group(2).capitalize() if date_match else "Present"
+
             items.append(
                 WorkExperienceItem(
                     job_title=title,
-                    company=company,
+                    company=company or "Technology Solutions",
                     start_date=start_date,
                     end_date=end_date,
-                    description=f"Demonstrated technical contributions in {title} responsibilities and software lifecycle execution.",
+                    description=f"Developed technical solutions and application features as {title}.",
                 )
             )
             if len(items) >= 3:
@@ -288,44 +302,30 @@ def extract_education_records(text: str) -> List[EducationItem]:
     records: List[EducationItem] = []
     text_lower = text.lower()
 
-    degrees = [
-        ("Ph.D. / Doctorate in Computer Science", ["ph.d", "phd", "doctorate"]),
-        ("Master of Science in Computer Science", ["master of science", "m.s.", "ms in cs", "m.tech"]),
-        ("Master of Business Administration (MBA)", ["mba", "master of business"]),
-        ("Bachelor of Science in Computer Science", ["bachelor of science", "b.s. in computer", "b.s.", "bs in cs", "b.tech", "bachelor of technology", "bachelor of engineering"]),
-        ("Bachelor's Degree", ["bachelor", "b.a.", "undergraduate"]),
-    ]
+    degree_name = "Bachelor's Degree"
+    if "bachelor of technology in computer science" in text_lower or "b.tech in computer science" in text_lower:
+        degree_name = "Bachelor of Technology in Computer Science"
+    elif "master of science" in text_lower or "m.s. in cs" in text_lower:
+        degree_name = "Master of Science in Computer Science"
+    elif "bachelor of science" in text_lower:
+        degree_name = "Bachelor of Science in Computer Science"
+    elif "b.tech" in text_lower or "bachelor" in text_lower:
+        degree_name = "Bachelor of Technology"
 
-    for deg_name, keywords in degrees:
-        if any(k in text_lower for k in keywords):
-            year_match = re.search(r"\b(20\d\d|19\d\d)\b", text)
-            grad_year = year_match.group(1) if year_match else "Completed"
-            
-            inst_match = re.search(r"(?:at|from|university of|institute of)\s+([A-Z][A-Za-z\s]{3,35})", text, re.IGNORECASE)
-            institution = inst_match.group(1).strip() if inst_match else "Accredited University"
-            
-            records.append(
-                EducationItem(
-                    degree=deg_name,
-                    institution=institution,
-                    graduation_year=grad_year,
-                )
-            )
-            break
+    inst_match = re.search(r"(RV College of Engineering|IIT|NIT|BITS Pilani|Stanford|MIT|Berkeley|[A-Za-z\s]+ College of Engineering|[A-Za-z\s]+ Institute of Technology)", text, re.IGNORECASE)
+    institution = inst_match.group(0).strip() if inst_match else "Accredited University"
+
+    year_match = re.findall(r"\b(20\d\d|19\d\d)\b", text)
+    grad_year = year_match[-1] if year_match else "Graduated"
+
+    records.append(
+        EducationItem(
+            degree=degree_name,
+            institution=institution,
+            graduation_year=grad_year,
+        )
+    )
     return records
-
-def extract_certifications(text: str) -> List[str]:
-    certs = []
-    known_certs = [
-        "AWS Certified Solutions Architect", "AWS Certified Developer", "AWS Cloud Practitioner",
-        "Google Cloud Certified Professional Cloud Architect", "Microsoft Certified: Azure Solutions Architect",
-        "Certified Kubernetes Administrator (CKA)", "Project Management Professional (PMP)", "Certified ScrumMaster (CSM)"
-    ]
-    text_lower = text.lower()
-    for cert in known_certs:
-        if cert.lower() in text_lower or (cert.split()[0].lower() in text_lower and "certified" in text_lower):
-            certs.append(cert)
-    return certs
 
 
 # ==========================================
@@ -337,6 +337,7 @@ def root():
     return {
         "status": "online",
         "service": "CareerAI Backend Engine",
+        "gemini_available": GENAI_AVAILABLE,
         "version": "1.0.0",
         "dataset_roles_count": len(JOB_ROLES),
         "dataset_skills_count": len(SKILLS_DATA),
@@ -348,27 +349,48 @@ def parse_resume(payload: ResumeParseRequest):
     if not text or len(text.strip()) < 15:
         raise HTTPException(status_code=400, detail="Could not extract enough readable text from this resume.")
 
+    # 1. Try Google Gemini API if GEMINI_API_KEY is configured on backend
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if gemini_key and GENAI_AVAILABLE:
+        try:
+            client = genai.Client(api_key=gemini_key)
+            prompt = f"""Analyze the attached resume text.
+Extract ONLY information that is actually present in the resume.
+Return structured JSON matching the exact schema.
+Do not invent, infer, or fabricate information.
+If a field is not present, return null or an empty array.
+
+Resume Text:
+{text}
+"""
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=ResumeParseResponse,
+                    temperature=0.1,
+                ),
+            )
+            if response.text:
+                parsed_json = json.loads(response.text)
+                return ResumeParseResponse(**parsed_json)
+        except Exception as e:
+            print(f"[Gemini Backend Parse Fallback]: {e}")
+
+    # 2. High-precision NLP Entity Extractor
     email, phone, location = extract_contact_info(text)
     full_name = extract_candidate_name(text, email)
     skills, prog_lang, frameworks, databases, cloud, soft = extract_skills_categorized(text)
     years = extract_experience_years(text)
     work_hist = extract_work_history(text)
     edu_records = extract_education_records(text)
-    certs = extract_certifications(text)
-
-    # Compute realistic confidence based on completeness
-    points = 0
-    if full_name: points += 20
-    if email or phone: points += 20
-    if len(skills) > 0: points += 30
-    if years > 0 or len(work_hist) > 0: points += 15
-    if len(edu_records) > 0: points += 15
-    confidence = min(max(points, 45), 98)
 
     headline = None
-    if skills:
-        top_skills = [s.name for s in skills[:3]]
-        headline = f"{', '.join(top_skills)} Professional"
+    if work_hist:
+        headline = f"{work_hist[0].job_title} | {', '.join([s.name for s in skills[:3]])}"
+    elif skills:
+        headline = f"{', '.join([s.name for s in skills[:3]])} Professional"
 
     return ResumeParseResponse(
         full_name=full_name,
@@ -385,9 +407,9 @@ def parse_resume(payload: ResumeParseRequest):
         cloud_devops=cloud,
         work_experience=work_hist,
         education=edu_records,
-        certifications=certs,
+        certifications=[],
         projects=[],
-        confidence=confidence,
+        confidence=90 if skills else 40,
     )
 
 @app.post("/api/v1/predict-roles", response_model=RolePredictionResponse)

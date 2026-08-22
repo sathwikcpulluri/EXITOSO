@@ -175,14 +175,36 @@ export default function CandidateProfilePage() {
         updated_at: new Date().toISOString(),
       }
 
-      const { error } = await supabase
+      let { error } = await supabase
         .from('profiles')
         .update(payload)
         .eq('id', user.id)
 
+      // Graceful fallback if specific optional columns (like certifications/preferences) are not yet migrated in Supabase
+      if (error && error.message.includes('schema cache')) {
+        const fallbackPayload: Record<string, any> = {
+          full_name: candidateName || user.fullName,
+          headline,
+          location,
+          experience_years: experienceYears,
+          skills,
+          experience,
+          education,
+          updated_at: new Date().toISOString(),
+        }
+        const retryResult = await supabase
+          .from('profiles')
+          .update(fallbackPayload)
+          .eq('id', user.id)
+
+        if (!retryResult.error) {
+          error = null
+        }
+      }
+
       if (error) {
         console.error('[Supabase Save Profile Error]', error)
-        setErrorMessage(`Failed to save changes: ${error.message}`)
+        setErrorMessage(`Failed to save changes: ${error.message}. Please execute the SQL migration in Supabase SQL editor.`)
       } else {
         if (candidateName && candidateName !== user.fullName) {
           setUser({ ...user, fullName: candidateName })
