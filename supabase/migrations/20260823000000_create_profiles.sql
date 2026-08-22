@@ -10,9 +10,33 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   role TEXT DEFAULT 'candidate',
   organization_id UUID,
   avatar_url TEXT,
+  headline TEXT,
+  location TEXT,
+  experience_years NUMERIC DEFAULT 0,
+  skills JSONB DEFAULT '[]'::jsonb,
+  education JSONB DEFAULT '[]'::jsonb,
+  experience JSONB DEFAULT '[]'::jsonb,
+  certifications JSONB DEFAULT '[]'::jsonb,
+  preferences JSONB DEFAULT '{}'::jsonb,
+  resume_url TEXT,
+  resume_filename TEXT,
+  parsing_confidence NUMERIC DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Ensure columns exist if table was previously created with minimal columns
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS headline TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS location TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS experience_years NUMERIC DEFAULT 0;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS skills JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS education JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS experience JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS certifications JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS preferences JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS resume_url TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS resume_filename TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS parsing_confidence NUMERIC DEFAULT 0;
 
 -- 2. Enable Row Level Security
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
