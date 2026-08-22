@@ -23,14 +23,22 @@ import {
   Layers,
   ShieldCheck,
   Columns3,
+  Globe2,
+  TrendingUp,
+  Activity,
+  Calendar,
+  Compass,
+  Check,
+  Minus,
 } from 'lucide-react'
 
 interface CompareJobItem {
   id: string
   company: string
   title: string
-  matchIndex: number
-  hiringProbability: number
+  competitivenessScore: number
+  jobFitScore: number
+  marketOppScore: number
   topStrength: string
   biggestGap: string
 }
@@ -46,6 +54,7 @@ export default function HiringProbabilityPage() {
   const [preferredSkillsInput, setPreferredSkillsInput] = useState('')
   const [minExperience, setMinExperience] = useState<number>(3)
   const [locationMode, setLocationMode] = useState('Remote')
+  const [jobRecency, setJobRecency] = useState('Fresh')
   const [educationReq, setEducationReq] = useState("Bachelor's Degree")
 
   // Real candidate profile loaded from Supabase
@@ -87,7 +96,7 @@ export default function HiringProbabilityPage() {
           .single()
 
         if (error) {
-          console.warn('[HiringPredictor] Profile fetch warning:', error.message)
+          console.warn('[HiringCompetitiveness] Profile fetch warning:', error.message)
         }
 
         const meta = authUser.user_metadata || {}
@@ -106,7 +115,7 @@ export default function HiringProbabilityPage() {
         setCandidateExperience(finalYears)
         setCandidateSkills(cleanSkills)
       } catch (err) {
-        console.error('[HiringPredictor] Profile load error:', err)
+        console.error('[HiringCompetitiveness] Profile load error:', err)
       } finally {
         setIsLoadingProfile(false)
       }
@@ -122,7 +131,7 @@ export default function HiringProbabilityPage() {
     }
   }
 
-  // 2. Perform AI Hiring Probability Prediction
+  // 2. Perform Market-Aware AI Hiring Competitiveness Prediction
   const handlePredict = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
     setErrorMessage('')
@@ -169,6 +178,7 @@ export default function HiringProbabilityPage() {
         preferred_skills: parsedPrefSkills.length > 0 ? parsedPrefSkills : undefined,
         min_years_experience: minExperience,
         location: locationMode,
+        job_recency: jobRecency,
         education_requirement: educationReq,
         candidate_name: candidateName,
         candidate_skills: candidateSkills,
@@ -183,9 +193,10 @@ export default function HiringProbabilityPage() {
         id: `comp-${Date.now()}`,
         company: result.company_name,
         title: result.job_title,
-        matchIndex: result.match_index,
-        hiringProbability: result.hiring_probability,
-        topStrength: result.strengths[0] || 'Strong skill overlap with core requirements',
+        competitivenessScore: result.competitiveness_score,
+        jobFitScore: result.breakdown.job_fit_score,
+        marketOppScore: result.breakdown.market_opportunity_score,
+        topStrength: result.strengths[0] || 'Strong candidate alignment with core requirements',
         biggestGap: result.missing_required_skills[0]?.skill || 'None identified',
       }
       setCompareList((prev) => [newCompareItem, ...prev.filter((p) => p.company !== result.company_name)])
@@ -202,14 +213,14 @@ export default function HiringProbabilityPage() {
             job_id: `hiring-${Date.now()}`,
             job_title: result.job_title,
             company: result.company_name,
-            match_score: result.match_index,
+            match_score: result.competitiveness_score,
             prediction_label: result.candidate_strength,
             confidence: result.ai_confidence,
-            skill_score: result.scores.technical_skill_match,
-            experience_score: result.scores.relevant_experience,
-            role_score: result.scores.role_alignment,
-            responsibility_score: result.scores.experience_level_match,
-            education_score: result.scores.education_certification_match,
+            skill_score: result.breakdown.required_skill_coverage,
+            experience_score: result.breakdown.relevant_experience,
+            role_score: result.breakdown.role_alignment,
+            responsibility_score: result.breakdown.job_fit_score,
+            education_score: result.breakdown.education_certification,
             certification_score: 85,
             matched_skills: result.matched_skills,
             missing_skills: result.missing_required_skills.map((m) => m.skill),
@@ -239,13 +250,13 @@ export default function HiringProbabilityPage() {
             },
           })
 
-          setSavedSuccessMsg('Prediction calculated and saved to your history.')
+          setSavedSuccessMsg('Market-aware competitiveness evaluation saved to your history.')
         }
       } catch (saveErr) {
-        console.warn('[HiringPredictor Supabase Save]', saveErr)
+        console.warn('[HiringCompetitiveness Supabase Save]', saveErr)
       }
     } catch (err: any) {
-      console.error('[HiringPredictor Error]', err)
+      console.error('[HiringCompetitiveness Error]', err)
       setErrorMessage('AI analysis temporarily unavailable. Please try again.')
     } finally {
       setIsAnalyzing(false)
@@ -254,17 +265,18 @@ export default function HiringProbabilityPage() {
 
   const getStrengthBadgeVariant = (strength: string) => {
     const s = strength.toLowerCase()
-    if (s.includes('very strong') || s.includes('strong candidate')) return 'success'
+    if (s.includes('very strong')) return 'success'
+    if (s.includes('strong')) return 'success'
     if (s.includes('competitive')) return 'info'
-    if (s.includes('possible')) return 'warning'
+    if (s.includes('developing') || s.includes('possible')) return 'warning'
     return 'neutral'
   }
 
   return (
     <div className="space-y-8 animate-fade-in pb-16 text-white max-w-6xl mx-auto">
       <PageHeader
-        title="AI Hiring Probability Predictor"
-        subtitle="Estimate your true hiring probability and competency alignment for target companies and job applications."
+        title="AI Hiring Competitiveness Predictor"
+        subtitle="Market-aware candidate competitiveness analysis evaluating Job Fit, Market Opportunity, and Candidate Evidence."
         actions={
           <div className="flex items-center gap-2">
             <Button
@@ -299,7 +311,7 @@ export default function HiringProbabilityPage() {
             <div className="flex items-center gap-2">
               <Briefcase className="h-4 w-4 text-orange-400" />
               <span>
-                Evaluating Profile: <strong className="text-white">{candidateName || 'Candidate'}</strong>
+                Evaluating Candidate: <strong className="text-white">{candidateName || 'Candidate'}</strong>
                 {candidateHeadline && <span className="text-neutral-400"> ({candidateHeadline})</span>}
               </span>
             </div>
@@ -330,7 +342,7 @@ export default function HiringProbabilityPage() {
 
       {activeTab === 'predict' ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column: Job & Company Form */}
+          {/* Left Column: Target Opportunity Form */}
           <div className="space-y-6">
             <Card className="p-6 space-y-4 border-white/10">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -445,20 +457,36 @@ export default function HiringProbabilityPage() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
-                    Education Requirement
-                  </label>
-                  <select
-                    value={educationReq}
-                    onChange={(e) => setEducationReq(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-neutral-900 border border-white/10 text-white text-xs focus:border-rose-500 outline-none"
-                  >
-                    <option value="Bachelor's Degree">Bachelor's Degree</option>
-                    <option value="Master's Degree">Master's Degree</option>
-                    <option value="PhD / Doctorate">PhD / Doctorate</option>
-                    <option value="Any / Equivalent Experience">Any / Equivalent Experience</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                      Posting Recency
+                    </label>
+                    <select
+                      value={jobRecency}
+                      onChange={(e) => setJobRecency(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-neutral-900 border border-white/10 text-white text-xs focus:border-rose-500 outline-none"
+                    >
+                      <option value="Fresh">Fresh (&lt; 7 days)</option>
+                      <option value="Recent">Recent (1-4 weeks)</option>
+                      <option value="Older">Older (30+ days)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                      Education Req
+                    </label>
+                    <select
+                      value={educationReq}
+                      onChange={(e) => setEducationReq(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-neutral-900 border border-white/10 text-white text-xs focus:border-rose-500 outline-none"
+                    >
+                      <option value="Bachelor's Degree">Bachelor's Degree</option>
+                      <option value="Master's Degree">Master's Degree</option>
+                      <option value="PhD / Doctorate">PhD / Doctorate</option>
+                      <option value="Any / Equivalent Experience">Any / Equivalent</option>
+                    </select>
+                  </div>
                 </div>
 
                 <Button
@@ -469,40 +497,40 @@ export default function HiringProbabilityPage() {
                   {isAnalyzing ? (
                     <>
                       <RefreshCw className="h-4 w-4 animate-spin" />
-                      Analyzing candidate profile against job requirements...
+                      Evaluating market competitiveness...
                     </>
                   ) : (
                     <>
                       <Sparkles className="h-4 w-4 text-orange-400" />
-                      Predict Hiring Probability
+                      Estimate Hiring Competitiveness
                     </>
                   )}
                 </Button>
               </form>
             </Card>
 
-            {/* Company hiring transparency disclaimer */}
+            {/* Model Disclaimer */}
             <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.08] text-[11px] text-neutral-400 space-y-1">
               <div className="flex items-center gap-1.5 font-bold text-neutral-300">
-                <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" /> AI Estimation Disclaimer
+                <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" /> Market-Aware Model Notice
               </div>
               <p className="leading-relaxed">
-                Company-specific internal hiring quotas are proprietary. This prediction is an AI estimate calculated from measurable competency factors and verified profile alignment.
+                This metric represents an <strong>Estimated Hiring Competitiveness</strong> index derived from 3 distinct pillars: Job Fit (60%), Market Opportunity (25%), and Candidate Evidence (15%). It is not a guaranteed hiring outcome.
               </p>
             </div>
           </div>
 
-          {/* Middle/Right Column: Full Hiring Probability Dashboard */}
+          {/* Middle/Right Column: Market Competitiveness Dashboard */}
           <div className="lg:col-span-2 space-y-6">
             {predictionResult ? (
               <>
-                {/* Top Prediction Overview Banner */}
+                {/* Primary Competitiveness Score Banner */}
                 <div className="p-6 rounded-2xl bg-gradient-to-r from-rose-950/40 via-neutral-900/90 to-orange-950/30 border border-white/10 shadow-[0_15px_35px_rgba(0,0,0,0.5)] space-y-6 animate-fade-in">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 pb-6 border-b border-white/[0.08]">
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 flex-wrap">
                         <Badge variant={getStrengthBadgeVariant(predictionResult.candidate_strength)}>
-                          {predictionResult.candidate_strength}
+                          {predictionResult.candidate_strength} Competitive Position
                         </Badge>
                         <span className="text-xs text-neutral-400">
                           AI Confidence: <strong>{predictionResult.ai_confidence}%</strong>
@@ -516,37 +544,178 @@ export default function HiringProbabilityPage() {
 
                     <div className="flex items-center gap-6">
                       <div className="text-center">
-                        <ScoreRing score={predictionResult.match_index} size="md" />
-                        <span className="text-[10px] text-neutral-400 uppercase font-bold block mt-1">Match Index</span>
-                      </div>
-                      <div className="text-center">
-                        <ScoreRing score={predictionResult.hiring_probability} size="lg" />
-                        <span className="text-[10px] text-rose-400 uppercase font-bold block mt-1">Hiring Probability</span>
+                        <ScoreRing score={predictionResult.competitiveness_score} size="lg" />
+                        <span className="text-[10px] text-rose-400 uppercase font-bold block mt-1">
+                          Competitiveness
+                        </span>
                       </div>
                     </div>
                   </div>
 
-                  {/* 10-Factor Match Breakdown Bars */}
-                  <div className="space-y-3">
-                    <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">
-                      10-Factor Competency Match Breakdown
-                    </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <ScoreBar label="Technical Skills Match (25%)" score={predictionResult.scores.technical_skill_match} />
-                      <ScoreBar label="Required Skills Coverage (20%)" score={predictionResult.scores.required_skill_coverage} />
-                      <ScoreBar label="Relevant Experience (15%)" score={predictionResult.scores.relevant_experience} />
-                      <ScoreBar label="Role Alignment (10%)" score={predictionResult.scores.role_alignment} />
-                      <ScoreBar label="Experience Level Match (10%)" score={predictionResult.scores.experience_level_match} />
-                      <ScoreBar label="Preferred Skills Match (5%)" score={predictionResult.scores.preferred_skill_match} />
-                      <ScoreBar label="Industry / Domain Match (5%)" score={predictionResult.scores.industry_match} />
-                      <ScoreBar label="Education & Certification (3%)" score={predictionResult.scores.education_certification_match} />
-                      <ScoreBar label="Career Progression (4%)" score={predictionResult.scores.career_progression} />
-                      <ScoreBar label="Resume Evidence Quality (3%)" score={predictionResult.scores.resume_evidence_quality} />
+                  {/* 3 Core Pillars Overview */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase text-neutral-400">1. Job Fit</span>
+                        <span className="text-xs font-bold text-rose-400">60% Weight</span>
+                      </div>
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-2xl font-extrabold text-white">
+                          {predictionResult.breakdown.job_fit_score}
+                          <span className="text-xs text-neutral-500 font-normal">/100</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase text-neutral-400">2. Market Opp</span>
+                        <span className="text-xs font-bold text-orange-400">25% Weight</span>
+                      </div>
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-2xl font-extrabold text-white">
+                          {predictionResult.breakdown.market_opportunity_score}
+                          <span className="text-xs text-neutral-500 font-normal">/100</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase text-neutral-400">3. Candidate Evidence</span>
+                        <span className="text-xs font-bold text-emerald-400">15% Weight</span>
+                      </div>
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-2xl font-extrabold text-white">
+                          {predictionResult.breakdown.candidate_evidence_score}
+                          <span className="text-xs text-neutral-500 font-normal">/100</span>
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Skills Analysis Card */}
+                {/* Market Snapshot Telemetry Card */}
+                <Card className="p-6 border-white/10 space-y-4">
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+                      <Globe2 className="h-4 w-4 text-orange-400" /> Market Snapshot Telemetry
+                    </CardTitle>
+                    <span className="text-[10px] text-neutral-400">
+                      Source: {predictionResult.market_snapshot.source} ({predictionResult.market_snapshot.timestamp})
+                    </span>
+                  </CardHeader>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1">
+                      <span className="text-[10px] uppercase font-bold text-neutral-400 block">Role Demand</span>
+                      <span className="text-sm font-bold text-emerald-400">
+                        {predictionResult.market_snapshot.role_demand}
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1">
+                      <span className="text-[10px] uppercase font-bold text-neutral-400 block">Active Openings</span>
+                      <span className="text-sm font-bold text-white">
+                        {predictionResult.market_snapshot.relevant_opportunities} verified
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1">
+                      <span className="text-[10px] uppercase font-bold text-neutral-400 block">Skill Demand</span>
+                      <span className="text-sm font-bold text-emerald-400">
+                        {predictionResult.market_snapshot.skill_demand}
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1">
+                      <span className="text-[10px] uppercase font-bold text-neutral-400 block">Market Trend</span>
+                      <span className="text-sm font-bold text-orange-400 flex items-center gap-1">
+                        <TrendingUp className="h-3.5 w-3.5" /> {predictionResult.market_snapshot.market_trend}
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1">
+                      <span className="text-[10px] uppercase font-bold text-neutral-400 block">Job Recency</span>
+                      <span className="text-sm font-bold text-rose-400 flex items-center gap-1">
+                        <Calendar className="h-3.5 w-3.5" /> {predictionResult.market_snapshot.job_recency}
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1">
+                      <span className="text-[10px] uppercase font-bold text-neutral-400 block">Location Opp</span>
+                      <span className="text-sm font-bold text-emerald-400 flex items-center gap-1">
+                        <Compass className="h-3.5 w-3.5" /> {predictionResult.market_snapshot.location_opportunity}
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1">
+                      <span className="text-[10px] uppercase font-bold text-neutral-400 block">Competition</span>
+                      <span className="text-sm font-bold text-neutral-400">
+                        {predictionResult.market_snapshot.competition}
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1">
+                      <span className="text-[10px] uppercase font-bold text-neutral-400 block">Signal Reliability</span>
+                      <span className="text-sm font-bold text-emerald-400 flex items-center gap-1">
+                        <Activity className="h-3.5 w-3.5" /> High (Verified)
+                      </span>
+                    </div>
+                  </div>
+                </Card>
+
+                {/* Explainability: Why this score? */}
+                <Card className="p-6 border-white/10 space-y-3">
+                  <CardHeader>
+                    <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+                      <Award className="h-4 w-4 text-rose-400" /> Why this score? (Factor Analysis)
+                    </CardTitle>
+                  </CardHeader>
+                  <div className="space-y-2 mt-1">
+                    {predictionResult.factors_why.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 ${
+                          item.sign === '+'
+                            ? 'bg-emerald-950/20 border-emerald-500/25 text-emerald-200'
+                            : 'bg-amber-950/20 border-amber-500/25 text-amber-200'
+                        }`}
+                      >
+                        <div
+                          className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
+                            item.sign === '+' ? 'bg-emerald-500/30 text-emerald-300' : 'bg-amber-500/30 text-amber-300'
+                          }`}
+                        >
+                          {item.sign === '+' ? <Check className="h-3.5 w-3.5" /> : <Minus className="h-3.5 w-3.5" />}
+                        </div>
+                        <div>
+                          <strong className="text-white block">{item.factor}</strong>
+                          <span className="text-[11px] opacity-90">{item.description}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+
+                {/* Granular Factor Progress Bars */}
+                <Card className="p-6 border-white/10 space-y-4">
+                  <CardHeader>
+                    <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+                      <Layers className="h-4 w-4 text-orange-400" /> Sub-Factor Alignment Breakdown
+                    </CardTitle>
+                  </CardHeader>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                    <ScoreBar label="Required Skills Coverage (25%)" score={predictionResult.breakdown.required_skill_coverage} />
+                    <ScoreBar label="Relevant Experience Depth (15%)" score={predictionResult.breakdown.relevant_experience} />
+                    <ScoreBar label="Job Title & Role Alignment (10%)" score={predictionResult.breakdown.role_alignment} />
+                    <ScoreBar label="Preferred Skills Bonus (5%)" score={predictionResult.breakdown.preferred_skill_match} />
+                    <ScoreBar label="Resume Evidence Quality" score={predictionResult.breakdown.resume_evidence} />
+                    <ScoreBar label="Verified Skills Profile Completeness" score={predictionResult.breakdown.profile_completeness} />
+                  </div>
+                </Card>
+
+                {/* Skills Analysis */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   {/* Matched Skills */}
                   <Card className="p-6 border-white/10">
@@ -618,32 +787,31 @@ export default function HiringProbabilityPage() {
                   </Card>
                 </div>
 
-                {/* AI Explanation & Candidate Strengths */}
-                <Card className="p-6 space-y-4 border-white/10">
-                  <CardHeader>
-                    <CardTitle className="text-base flex items-center gap-2 text-white">
-                      <Award className="h-4 w-4 text-orange-400" /> Why this candidate is a good match
-                    </CardTitle>
-                  </CardHeader>
-                  <div className="space-y-2 text-xs text-neutral-300">
-                    {predictionResult.strengths.map((str, idx) => (
-                      <div key={idx} className="flex items-start gap-2.5 p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.06]">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                        <span className="leading-relaxed">{str}</span>
-                      </div>
-                    ))}
-                  </div>
-                </Card>
-
-                {/* Potential Concerns & Recommended Improvements */}
+                {/* AI Explanation, Top Strengths, and Concerns */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <Card className="p-6 border-white/10">
+                  <Card className="p-6 border-white/10 space-y-3">
                     <CardHeader>
-                      <CardTitle className="text-sm font-bold text-amber-400 flex items-center gap-2">
-                        <AlertTriangle className="h-4 w-4" /> Potential Hiring Concerns
+                      <CardTitle className="text-sm font-bold text-emerald-400 flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4" /> Top Strengths
                       </CardTitle>
                     </CardHeader>
-                    <div className="space-y-2 mt-2 text-xs text-neutral-300">
+                    <div className="space-y-2 text-xs text-neutral-300">
+                      {predictionResult.strengths.map((str, idx) => (
+                        <div key={idx} className="flex items-start gap-2 p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+                          <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                          <span className="leading-relaxed">{str}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+
+                  <Card className="p-6 border-white/10 space-y-3">
+                    <CardHeader>
+                      <CardTitle className="text-sm font-bold text-amber-400 flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4" /> Main Weaknesses & Concerns
+                      </CardTitle>
+                    </CardHeader>
+                    <div className="space-y-2 text-xs text-neutral-300">
                       {predictionResult.concerns.map((con, idx) => (
                         <div key={idx} className="p-2.5 rounded-lg bg-amber-950/20 border border-amber-500/20 leading-relaxed">
                           ⚠️ {con}
@@ -651,25 +819,26 @@ export default function HiringProbabilityPage() {
                       ))}
                     </div>
                   </Card>
-
-                  <Card className="p-6 border-white/10">
-                    <CardHeader>
-                      <CardTitle className="text-sm font-bold text-rose-400 flex items-center gap-2">
-                        <Lightbulb className="h-4 w-4" /> Recommended Improvements
-                      </CardTitle>
-                    </CardHeader>
-                    <div className="space-y-2 mt-2 text-xs text-neutral-300">
-                      {predictionResult.recommendations.map((rec, idx) => (
-                        <div key={idx} className="flex items-start gap-2 p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.06]">
-                          <span className="w-4 h-4 rounded-full bg-rose-500/20 text-rose-300 flex items-center justify-center shrink-0 text-[10px] font-bold">
-                            {idx + 1}
-                          </span>
-                          <span className="leading-relaxed">{rec}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </Card>
                 </div>
+
+                {/* Recommended Improvements */}
+                <Card className="p-6 border-white/10 space-y-3">
+                  <CardHeader>
+                    <CardTitle className="text-sm font-bold text-rose-400 flex items-center gap-2">
+                      <Lightbulb className="h-4 w-4" /> Actionable Improvements
+                    </CardTitle>
+                  </CardHeader>
+                  <div className="space-y-2 text-xs text-neutral-300">
+                    {predictionResult.recommendations.map((rec, idx) => (
+                      <div key={idx} className="flex items-start gap-2 p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.06]">
+                        <span className="w-4 h-4 rounded-full bg-rose-500/20 text-rose-300 flex items-center justify-center shrink-0 text-[10px] font-bold">
+                          {idx + 1}
+                        </span>
+                        <span className="leading-relaxed">{rec}</span>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
 
                 {/* AI Skill Gap Learning Hub */}
                 <SkillGapLearningHub
@@ -685,10 +854,10 @@ export default function HiringProbabilityPage() {
                   <Target className="h-8 w-8" />
                 </div>
                 <div className="max-w-md mx-auto space-y-1.5">
-                  <h3 className="text-base font-bold text-white">No Hiring Prediction Calculated Yet</h3>
+                  <h3 className="text-base font-bold text-white">No Competitiveness Evaluation Run Yet</h3>
                   <p className="text-xs text-neutral-400 leading-relaxed">
-                    Enter the company name, target job title, and job description on the left, then click{' '}
-                    <strong className="text-neutral-200">Predict Hiring Probability</strong> to evaluate your hiring chances.
+                    Enter the company name, target job title, job recency, and job description on the left, then click{' '}
+                    <strong className="text-neutral-200">Estimate Hiring Competitiveness</strong> to evaluate your 3-pillar alignment.
                   </p>
                 </div>
               </Card>
@@ -726,17 +895,17 @@ export default function HiringProbabilityPage() {
                       <h4 className="text-base font-extrabold text-white mt-0.5">{item.title}</h4>
                       <p className="text-xs text-neutral-400">{item.company}</p>
                     </div>
-                    <ScoreRing score={item.hiringProbability} size="sm" />
+                    <ScoreRing score={item.competitivenessScore} size="sm" />
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] text-xs">
                     <div>
-                      <span className="text-neutral-500 text-[10px] uppercase font-bold block">Match Index</span>
-                      <span className="font-extrabold text-white">{item.matchIndex}%</span>
+                      <span className="text-neutral-500 text-[10px] uppercase font-bold block">Job Fit (60%)</span>
+                      <span className="font-extrabold text-white">{item.jobFitScore}/100</span>
                     </div>
                     <div>
-                      <span className="text-neutral-500 text-[10px] uppercase font-bold block">Hiring Chance</span>
-                      <span className="font-extrabold text-emerald-400">{item.hiringProbability}%</span>
+                      <span className="text-neutral-500 text-[10px] uppercase font-bold block">Market Opp (25%)</span>
+                      <span className="font-extrabold text-orange-400">{item.marketOppScore}/100</span>
                     </div>
                   </div>
 

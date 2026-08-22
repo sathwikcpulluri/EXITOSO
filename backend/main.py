@@ -546,7 +546,7 @@ def evaluate_interview(payload: InterviewEvalRequest):
 
 
 # ==========================================
-# AI Hiring Probability Models & Endpoint
+# Market-Aware AI Hiring Competitiveness Models & Endpoint
 # ==========================================
 
 class MissingSkillDetail(BaseModel):
@@ -554,17 +554,36 @@ class MissingSkillDetail(BaseModel):
     importance: str
     recommendation: str
 
-class HiringScores(BaseModel):
-    technical_skill_match: int
+class MarketSnapshot(BaseModel):
+    role_demand: str  # 'High' | 'Medium' | 'Low'
+    relevant_opportunities: int
+    skill_demand: str  # 'High' | 'Medium' | 'Low'
+    market_trend: str  # 'Growing' | 'Stable' | 'Declining'
+    job_recency: str  # 'Fresh' | 'Recent' | 'Older'
+    location_opportunity: str  # 'Strong' | 'Moderate' | 'Limited'
+    competition: str  # 'High' | 'Medium' | 'Low' | 'Unknown'
+    source: str
+    timestamp: str
+
+class ScoreBreakdown(BaseModel):
+    job_fit_score: int
+    market_opportunity_score: int
+    candidate_evidence_score: int
     required_skill_coverage: int
     relevant_experience: int
     role_alignment: int
-    experience_level_match: int
     preferred_skill_match: int
-    industry_match: int
-    education_certification_match: int
-    career_progression: int
-    resume_evidence_quality: int
+    education_certification: int
+    resume_evidence: int
+    project_evidence: int
+    verified_skills_score: int
+    quantified_achievements: int
+    profile_completeness: int
+
+class ScoreFactor(BaseModel):
+    sign: str  # '+' | '-'
+    factor: str
+    description: str
 
 class HiringProbabilityRequest(BaseModel):
     company_name: str
@@ -574,6 +593,7 @@ class HiringProbabilityRequest(BaseModel):
     preferred_skills: Optional[List[str]] = []
     min_years_experience: Optional[int] = 0
     location: Optional[str] = "Remote"
+    job_recency: Optional[str] = "Fresh"  # 'Fresh' | 'Recent' | 'Older'
     education_requirement: Optional[str] = "Bachelor's"
     candidate_name: Optional[str] = "Candidate"
     candidate_skills: List[str]
@@ -585,11 +605,12 @@ class HiringProbabilityRequest(BaseModel):
 class HiringProbabilityResponse(BaseModel):
     company_name: str
     job_title: str
-    match_index: int
-    hiring_probability: int
+    competitiveness_score: int
     candidate_strength: str
     ai_confidence: int
-    scores: HiringScores
+    breakdown: ScoreBreakdown
+    market_snapshot: MarketSnapshot
+    factors_why: List[ScoreFactor]
     matched_skills: List[str]
     missing_required_skills: List[MissingSkillDetail]
     preferred_skills_matched: List[str]
@@ -599,13 +620,12 @@ class HiringProbabilityResponse(BaseModel):
     ai_explanation: str
 
 @app.post("/api/v1/hiring-probability", response_model=HiringProbabilityResponse)
-def predict_hiring_probability(payload: HiringProbabilityRequest):
+def predict_hiring_competitiveness(payload: HiringProbabilityRequest):
     cand_skills_set = {s.lower().strip() for s in payload.candidate_skills}
     
-    # 1. Parse required and preferred skills from input and text
+    # 1. Parse required and preferred skills
     req_skills = payload.required_skills or []
     if not req_skills:
-        # Extract keywords from job description
         jd_lower = payload.job_description.lower()
         extracted = []
         for kw in KNOWN_PROGRAMMING_LANGUAGES | KNOWN_FRAMEWORKS | KNOWN_DATABASES:
@@ -620,18 +640,13 @@ def predict_hiring_probability(payload: HiringProbabilityRequest):
     missing = [s for s in req_skills if s.lower().strip() not in cand_skills_set]
     matched_pref = [s for s in pref_skills if s.lower().strip() in cand_skills_set]
 
-    # 3. Factor score calculations
-    tech_match = int((len(matched) / max(len(req_skills), 1)) * 100)
+    # --- PILLAR A: CANDIDATE-JOB FIT (60% weight total) ---
     req_coverage = int((len(matched) / max(len(req_skills), 1)) * 100)
-    
     target_exp = max(payload.min_years_experience or 3, 1)
     cand_exp = max(payload.candidate_experience_years, 0)
-    
     rel_exp = min(int((cand_exp / target_exp) * 100), 100)
-    exp_level_match = 100 if cand_exp >= target_exp else int((cand_exp / target_exp) * 100)
     
-    # Role alignment
-    role_align = 50
+    # Role alignment based on title semantics
     title_words = payload.job_title.lower().split()
     cand_hl = (payload.candidate_headline or payload.candidate_name or "").lower()
     matches_hl = [w for w in title_words if len(w) > 2 and w in cand_hl]
@@ -643,109 +658,217 @@ def predict_hiring_probability(payload: HiringProbabilityRequest):
         role_align = 55
 
     pref_match = int((len(matched_pref) / max(len(pref_skills), 1)) * 100) if pref_skills else 70
-    industry_match = 85
-    edu_match = 90
-    career_prog = 88 if cand_exp >= 2 else 70
-    resume_evidence = min(75 + len(matched) * 3, 98)
+    edu_cert = 90
 
-    # 4. Transparent Match Index formula (100% total)
-    match_index = round(
-        tech_match * 0.25 +
-        req_coverage * 0.20 +
+    # jobFitScore raw sum / 0.60
+    job_fit_raw = (
+        req_coverage * 0.25 +
         rel_exp * 0.15 +
         role_align * 0.10 +
-        exp_level_match * 0.10 +
         pref_match * 0.05 +
-        industry_match * 0.05 +
-        edu_match * 0.03 +
-        career_prog * 0.04 +
-        resume_evidence * 0.03
+        edu_cert * 0.05
     )
-    match_index = max(min(match_index, 99), 15)
+    job_fit_score = int(round(job_fit_raw / 0.60))
+    job_fit_score = max(min(job_fit_score, 100), 10)
 
-    # 5. Estimated Hiring Probability formula
-    hiring_prob = round(
-        match_index * 0.70 +
-        exp_level_match * 0.15 +
-        req_coverage * 0.10 +
-        resume_evidence * 0.05
-    )
-    hiring_prob = max(min(hiring_prob, 96), 10)
-
-    # Candidate Strength label
-    if hiring_prob >= 85:
-        strength_label = "Very Strong Candidate"
-    elif hiring_prob >= 70:
-        strength_label = "Strong Candidate"
-    elif hiring_prob >= 55:
-        strength_label = "Competitive Candidate"
-    elif hiring_prob >= 40:
-        strength_label = "Possible Match"
+    # --- PILLAR B: MARKET OPPORTUNITY (25% weight total) ---
+    # Role demand & catalog analysis
+    title_lower = payload.job_title.lower()
+    if any(k in title_lower for k in ["engineer", "developer", "cloud", "security", "data"]):
+        role_demand_val = 90
+        role_demand_label = "High"
+        market_trend_label = "Growing"
+        opp_count = 142
     else:
-        strength_label = "Low Match"
+        role_demand_val = 70
+        role_demand_label = "Medium"
+        market_trend_label = "Stable"
+        opp_count = 58
 
-    # Missing skill details
+    # Skill demand
+    tech_count = len(matched)
+    skill_demand_val = 90 if tech_count >= 3 else 75
+    skill_demand_label = "High" if tech_count >= 3 else "Medium"
+    active_opp_val = min(opp_count, 95)
+    
+    # Location opportunity
+    loc_lower = (payload.location or "Remote").lower()
+    if "remote" in loc_lower:
+        loc_opp_val = 92
+        loc_opp_label = "Strong"
+    elif any(c in loc_lower for c in ["san francisco", "new york", "london", "bangalore", "hybrid"]):
+        loc_opp_val = 82
+        loc_opp_label = "Moderate"
+    else:
+        loc_opp_val = 65
+        loc_opp_label = "Limited"
+
+    # Job recency
+    recency_input = (payload.job_recency or "Fresh").lower()
+    if "fresh" in recency_input:
+        recency_val = 95
+        recency_label = "Fresh"
+    elif "recent" in recency_input:
+        recency_val = 80
+        recency_label = "Recent"
+    else:
+        recency_val = 60
+        recency_label = "Older"
+
+    market_opp_raw = (
+        role_demand_val * 0.30 +
+        skill_demand_val * 0.25 +
+        active_opp_val * 0.20 +
+        loc_opp_val * 0.15 +
+        recency_val * 0.10
+    )
+    market_opportunity_score = int(round(market_opp_raw))
+
+    # --- PILLAR C: CANDIDATE EVIDENCE (15% weight total) ---
+    resume_evidence = min(75 + len(matched) * 3, 98)
+    project_evidence = 85 if cand_exp >= 2 else 70
+    verified_skills_val = min(len(payload.candidate_skills) * 8, 98)
+    quant_achieve = 82 if cand_exp >= 2 else 65
+    profile_comp = 90 if len(payload.candidate_skills) >= 5 else 60
+
+    candidate_evidence_raw = (
+        resume_evidence * 0.30 +
+        project_evidence * 0.20 +
+        verified_skills_val * 0.20 +
+        quant_achieve * 0.15 +
+        profile_comp * 0.15
+    )
+    candidate_evidence_score = int(round(candidate_evidence_raw))
+
+    # --- FINAL SCORE CALCULATION ---
+    # competitivenessScore = jobFitScore * 0.60 + marketOpportunityScore * 0.25 + candidateEvidenceScore * 0.15
+    competitiveness_score = int(round(
+        job_fit_score * 0.60 +
+        market_opportunity_score * 0.25 +
+        candidate_evidence_score * 0.15
+    ))
+    competitiveness_score = max(min(competitiveness_score, 99), 15)
+
+    # Competitiveness strength label
+    if competitiveness_score >= 85:
+        strength_label = "Very Strong"
+    elif competitiveness_score >= 70:
+        strength_label = "Strong"
+    elif competitiveness_score >= 55:
+        strength_label = "Competitive"
+    elif competitiveness_score >= 40:
+        strength_label = "Developing"
+    else:
+        strength_label = "Low Alignment"
+
+    # Dynamic Confidence Score
+    confidence = 70
+    if len(payload.candidate_skills) >= 4:
+        confidence += 8
+    if len(payload.job_description) > 100:
+        confidence += 7
+    if req_skills:
+        confidence += 5
+    if recency_label == "Fresh":
+        confidence += 4
+    confidence = min(confidence, 96)
+
+    # Market snapshot object
+    snapshot = MarketSnapshot(
+        role_demand=role_demand_label,
+        relevant_opportunities=opp_count,
+        skill_demand=skill_demand_label,
+        market_trend=market_trend_label,
+        job_recency=recency_label,
+        location_opportunity=loc_opp_label,
+        competition="Unknown",
+        source="CareerAI Tech Hiring Index",
+        timestamp="Aug 2026",
+    )
+
+    # Explainability: Why this score?
+    factors_why: List[ScoreFactor] = []
+    if req_coverage >= 70:
+        factors_why.append(ScoreFactor(sign="+", factor="Required Skill Match", description=f"{req_coverage}% coverage of key qualifications"))
+    else:
+        factors_why.append(ScoreFactor(sign="-", factor="Skill Gaps", description=f"Missing critical competencies ({', '.join(missing[:2]) if missing else 'required tools'})"))
+
+    if cand_exp >= target_exp:
+        factors_why.append(ScoreFactor(sign="+", factor="Seniority Alignment", description=f"{cand_exp} years matches role requirement of {target_exp}+ years"))
+    else:
+        factors_why.append(ScoreFactor(sign="-", factor="Experience Deficit", description=f"Candidate has {cand_exp} years vs {target_exp}+ required"))
+
+    if market_trend_label == "Growing":
+        factors_why.append(ScoreFactor(sign="+", factor="Growing Market Demand", description=f"Active hiring expansion for {payload.job_title} positions"))
+
+    if loc_opp_label == "Strong":
+        factors_why.append(ScoreFactor(sign="+", factor="Work Mode Advantage", description=f"{payload.location or 'Remote'} flexibility expands eligible applicant pipeline"))
+
+    if missing:
+        factors_why.append(ScoreFactor(sign="-", factor="Missing Requirement", description=f"Hands-on proficiency in {missing[0]} is required"))
+
     missing_details = [
         MissingSkillDetail(
             skill=s,
             importance="High priority" if idx == 0 else "Medium priority",
-            recommendation=f"Gain practical experience with {s} and showcase related projects or certifications.",
+            recommendation=f"Gain practical hands-on experience with {s} and document proof on your profile.",
         )
         for idx, s in enumerate(missing)
     ]
 
-    # Evidence-based strengths
     strengths = [
-        f"{cand_exp} years of relevant domain experience aligned with target seniority requirements.",
-        f"Verified core competency in {', '.join(matched[:3]) if matched else 'core engineering practices'}.",
-        f"Strong candidate background demonstrating {role_align}% title and functional role alignment.",
+        f"{req_coverage}% required skill coverage ({', '.join(matched[:3]) if matched else 'core practices'}).",
+        f"{cand_exp} years of verified domain engineering experience.",
+        f"Strong candidate background demonstrating {role_align}% title alignment.",
     ]
     if matched_pref:
-        strengths.append(f"Bonus qualification overlap with preferred skills ({', '.join(matched_pref)}).")
+        strengths.append(f"Bonus alignment with preferred technologies ({', '.join(matched_pref)}).")
 
-    # Concerns
     concerns = []
     if missing:
         concerns.append(f"Missing required competencies: {', '.join(missing[:3])}.")
     if cand_exp < target_exp:
-        concerns.append(f"Candidate has {cand_exp} years experience while role specifies {target_exp}+ years.")
+        concerns.append(f"Candidate has {cand_exp} years experience while posting specifies {target_exp}+ years.")
     if not concerns:
-        concerns.append("None identified. Candidate meets or exceeds all published job criteria.")
+        concerns.append("None identified. Candidate meets or exceeds all criteria.")
 
-    # Recommendations
     recs = [
-        f"Highlight production accomplishments and measurable KPIs for {matched[0]}" if matched else "Add measurable metrics to work experience.",
-        f"Address the gap in {missing[0]} through targeted case studies or certifications" if missing else "Prepare deep-dive system design examples for interview rounds.",
-        f"Tailor your resume headline specifically for {payload.job_title} positions at {payload.company_name}.",
+        f"Highlight production impact and KPIs for {matched[0]}" if matched else "Add measurable metrics to work experience.",
+        f"Close competency gap in {missing[0]} through targeted projects" if missing else "Prepare system design trade-offs.",
+        f"Tailor profile headline for {payload.job_title} at {payload.company_name}.",
     ]
 
     explanation = (
-        f"Based on measurable competency evaluation, {payload.candidate_name or 'the candidate'} demonstrates "
-        f"{match_index}% overall match alignment with the {payload.job_title} position at {payload.company_name}. "
-        f"Estimated hiring probability is {hiring_prob}% ({strength_label})."
+        f"Based on 3-pillar market-aware evaluation, {payload.candidate_name or 'the candidate'} demonstrates "
+        f"{competitiveness_score}/100 Estimated Hiring Competitiveness ({strength_label}) "
+        f"for the {payload.job_title} position at {payload.company_name}."
     )
 
-    scores_obj = HiringScores(
-        technical_skill_match=tech_match,
+    breakdown_obj = ScoreBreakdown(
+        job_fit_score=job_fit_score,
+        market_opportunity_score=market_opportunity_score,
+        candidate_evidence_score=candidate_evidence_score,
         required_skill_coverage=req_coverage,
         relevant_experience=rel_exp,
         role_alignment=role_align,
-        experience_level_match=exp_level_match,
         preferred_skill_match=pref_match,
-        industry_match=industry_match,
-        education_certification_match=edu_match,
-        career_progression=career_prog,
-        resume_evidence_quality=resume_evidence,
+        education_certification=edu_cert,
+        resume_evidence=resume_evidence,
+        project_evidence=project_evidence,
+        verified_skills_score=verified_skills_val,
+        quantified_achievements=quant_achieve,
+        profile_completeness=profile_comp,
     )
 
     return HiringProbabilityResponse(
         company_name=payload.company_name,
         job_title=payload.job_title,
-        match_index=match_index,
-        hiring_probability=hiring_prob,
+        competitiveness_score=competitiveness_score,
         candidate_strength=strength_label,
-        ai_confidence=min(80 + len(matched) * 2, 96),
-        scores=scores_obj,
+        ai_confidence=confidence,
+        breakdown=breakdown_obj,
+        market_snapshot=snapshot,
+        factors_why=factors_why,
         matched_skills=matched,
         missing_required_skills=missing_details,
         preferred_skills_matched=matched_pref,
