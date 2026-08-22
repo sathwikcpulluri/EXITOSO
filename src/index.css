@@ -1,24 +1,20 @@
 @import "tailwindcss";
 @config "../tailwind.config.ts";
 
-@layer base {
-  *,
-  *::before,
-  *::after {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-  }
+/* Custom theme variables */
+:root {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
 
-  html {
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    scroll-behavior: smooth;
+@layer base {
+  * {
+    @apply border-surface-200;
   }
 
   body {
-    @apply bg-surface-50 text-surface-900 min-h-screen;
+    @apply bg-surface-50 text-surface-900 font-sans antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
 
   /* Custom scrollbar */
@@ -65,16 +61,22 @@
     @apply bg-white rounded-xl shadow-card border border-surface-100;
   }
 
+  /* Interactive card */
   .card-hover {
-    @apply bg-white rounded-xl shadow-card border border-surface-100 transition-all duration-300 hover:shadow-card-hover hover:-translate-y-0.5;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .card-hover:hover {
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+    transform: translateY(-2px);
+    border-color: #cbd5e1;
   }
 
   /* Score color utilities */
-  .score-low {
+  .score-poor {
     @apply text-accent-rose;
   }
 
-  .score-medium {
+  .score-fair {
     @apply text-accent-amber;
   }
 
@@ -89,6 +91,79 @@
   /* Skeleton shimmer */
   .skeleton {
     @apply bg-gradient-to-r from-surface-200 via-surface-100 to-surface-200 bg-[length:400%_100%] animate-shimmer rounded;
+  }
+
+  /* Futuristic Hero styles */
+  .fade-in {
+    animation: fadeInHero 0.8s ease forwards;
+  }
+
+  .fade-in-subtitle {
+    animation: fadeInSubtitle 1s ease forwards;
+  }
+
+  .explore-btn {
+    position: absolute;
+    bottom: 2.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    font-size: 0.875rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+
+  .explore-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateX(-50%) translateY(-2px);
+  }
+
+  .explore-arrow {
+    display: inline-flex;
+    animation: bounceSlow 2s infinite ease-in-out;
+  }
+}
+
+@keyframes fadeInHero {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInSubtitle {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes bounceSlow {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(4px);
   }
 }
 
