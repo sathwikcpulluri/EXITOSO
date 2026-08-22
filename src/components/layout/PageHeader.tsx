@@ -13,14 +13,14 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, subtitle, breadcrumbs, actions, className }: PageHeaderProps) {
   return (
-    <div className={cn('mb-6', className)}>
-      {breadcrumbs && <Breadcrumb items={breadcrumbs} className="mb-3" />}
+    <div className={cn('mb-8', className)}>
+      {breadcrumbs && <Breadcrumb items={breadcrumbs} className="mb-3 text-neutral-400" />}
       <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-surface-900">{title}</h1>
-          {subtitle && <p className="text-sm text-surface-500 mt-1">{subtitle}</p>}
+        <div className="space-y-1">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">{title}</h1>
+          {subtitle && <p className="text-xs sm:text-sm text-neutral-400 max-w-3xl leading-relaxed">{subtitle}</p>}
         </div>
-        {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
+        {actions && <div className="flex items-center gap-3 shrink-0">{actions}</div>}
       </div>
     </div>
   )

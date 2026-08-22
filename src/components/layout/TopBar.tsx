@@ -31,7 +31,7 @@ export function TopBar() {
   const location = useLocation()
   const navigate = useNavigate()
   const { user } = useAuthStore()
-  const { sidebarCollapsed, toggleMobileSidebar } = useUIStore()
+  const { toggleMobileSidebar } = useUIStore()
 
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [notifications, setNotifications] = useState(mockNotifications)
@@ -61,32 +61,31 @@ export function TopBar() {
     <>
       <header
         className={cn(
-          'sticky top-0 z-30 h-16 bg-white/80 backdrop-blur-xl border-b border-surface-100',
-          'flex items-center justify-between px-4 lg:px-6 transition-all duration-300',
-          sidebarCollapsed ? 'lg:pl-[88px]' : 'lg:pl-[272px]'
+          'sticky top-0 z-30 h-16 bg-[#080808]/80 backdrop-blur-xl border-b border-white/[0.08]',
+          'flex items-center justify-between px-4 lg:px-8 transition-all duration-300'
         )}
       >
         {/* Left section */}
         <div className="flex items-center gap-3">
           <button
             onClick={toggleMobileSidebar}
-            className="lg:hidden p-2 rounded-xl text-surface-500 hover:bg-surface-100 transition-colors"
+            className="lg:hidden p-2 rounded-xl text-neutral-400 hover:text-white hover:bg-white/[0.06] transition-colors"
           >
             <Menu className="h-5 w-5" />
           </button>
-          <h1 className="text-lg font-semibold text-surface-900">{pageTitle}</h1>
+          <h1 className="text-base sm:text-lg font-bold text-white tracking-tight">{pageTitle}</h1>
         </div>
 
         {/* Right section */}
-        <div className="flex items-center gap-2 relative">
+        <div className="flex items-center gap-3 relative">
           {/* Search Trigger */}
           <button
             onClick={() => setSearchOpen(true)}
-            className="flex items-center gap-2 p-2 sm:px-3 sm:py-1.5 rounded-xl text-surface-400 hover:text-surface-600 bg-surface-50 hover:bg-surface-100 transition-colors text-xs font-medium"
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-neutral-400 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 transition-colors text-xs font-semibold"
           >
-            <Search className="h-4 w-4" />
-            <span className="hidden sm:inline text-surface-500">Quick search...</span>
-            <kbd className="hidden sm:inline px-1.5 py-0.5 text-[10px] bg-white border border-surface-200 rounded text-surface-400">
+            <Search className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline text-neutral-400">Quick search...</span>
+            <kbd className="hidden sm:inline px-1.5 py-0.5 text-[10px] bg-white/10 border border-white/10 rounded text-neutral-400">
               ⌘K
             </kbd>
           </button>
@@ -95,11 +94,11 @@ export function TopBar() {
           <div className="relative">
             <button
               onClick={() => setNotificationsOpen(!notificationsOpen)}
-              className="relative p-2.5 rounded-xl text-surface-400 hover:text-surface-600 hover:bg-surface-50 transition-colors"
+              className="relative p-2 rounded-xl text-neutral-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
             >
               <Bell className="h-5 w-5" />
               {unreadCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white" />
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-black" />
               )}
             </button>
 
@@ -110,12 +109,12 @@ export function TopBar() {
                   className="fixed inset-0 z-40"
                   onClick={() => setNotificationsOpen(false)}
                 />
-                <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-xl border border-surface-200 z-50 animate-scale-in p-4 overflow-hidden">
-                  <div className="flex items-center justify-between pb-3 border-b border-surface-100">
+                <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-neutral-900/95 backdrop-blur-2xl rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.8)] border border-white/10 z-50 animate-scale-in p-4 overflow-hidden text-white">
+                  <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
                     <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-surface-900 text-sm">Notifications</h3>
+                      <h3 className="font-bold text-white text-sm">Notifications</h3>
                       {unreadCount > 0 && (
-                        <span className="px-1.5 py-0.5 bg-rose-50 text-rose-600 text-[10px] font-bold rounded-full">
+                        <span className="px-1.5 py-0.5 bg-rose-500/20 text-rose-400 text-[10px] font-bold rounded-full border border-rose-500/30">
                           {unreadCount} new
                         </span>
                       )}
@@ -123,7 +122,7 @@ export function TopBar() {
                     {unreadCount > 0 && (
                       <button
                         onClick={markAllAsRead}
-                        className="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
+                        className="text-xs text-rose-400 hover:text-rose-300 font-semibold flex items-center gap-1 cursor-pointer"
                       >
                         <Check className="h-3.5 w-3.5" /> Mark read
                       </button>
@@ -136,7 +135,9 @@ export function TopBar() {
                         key={item.id}
                         className={cn(
                           'p-3 rounded-xl transition-colors text-xs space-y-1 cursor-pointer',
-                          item.isRead ? 'bg-surface-50/50 hover:bg-surface-50' : 'bg-primary-50/40 hover:bg-primary-50/70 border border-primary-100'
+                          item.isRead
+                            ? 'bg-white/[0.02] hover:bg-white/[0.06] border border-transparent'
+                            : 'bg-white/[0.06] hover:bg-white/[0.09] border border-rose-500/30'
                         )}
                         onClick={() => {
                           setNotifications((prev) =>
@@ -147,12 +148,12 @@ export function TopBar() {
                         }}
                       >
                         <div className="flex items-center justify-between">
-                          <p className="font-semibold text-surface-900">{item.title}</p>
-                          <span className="text-[10px] text-surface-400">
+                          <p className="font-semibold text-white">{item.title}</p>
+                          <span className="text-[10px] text-neutral-500">
                             {new Date(item.createdAt).toLocaleDateString()}
                           </span>
                         </div>
-                        <p className="text-surface-600 leading-relaxed">{item.body}</p>
+                        <p className="text-neutral-400 leading-relaxed">{item.body}</p>
                       </div>
                     ))}
                   </div>
@@ -164,11 +165,11 @@ export function TopBar() {
           {/* User avatar */}
           <Link
             to="/candidate/profile"
-            className="ml-1 flex items-center gap-2 pl-3 border-l border-surface-200 hover:opacity-80 transition-opacity"
+            className="ml-1 flex items-center gap-2 pl-3 border-l border-white/10 hover:opacity-80 transition-opacity"
           >
             <Avatar name={user?.fullName || 'User'} size="sm" />
             <div className="hidden sm:block">
-              <p className="text-sm font-medium text-surface-900">{user?.fullName}</p>
+              <p className="text-sm font-semibold text-white">{user?.fullName || 'Candidate'}</p>
             </div>
           </Link>
         </div>
@@ -176,21 +177,21 @@ export function TopBar() {
 
       {/* Global Quick Search Modal */}
       {searchOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-surface-200 overflow-hidden animate-scale-in">
-            <div className="p-4 border-b border-surface-100 flex items-center gap-3">
-              <Search className="h-5 w-5 text-surface-400 shrink-0" />
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+          <div className="bg-neutral-900/95 backdrop-blur-2xl w-full max-w-lg rounded-3xl shadow-[0_25px_60px_rgba(0,0,0,0.9)] border border-white/10 overflow-hidden animate-scale-in text-white">
+            <div className="p-4 border-b border-white/[0.08] flex items-center gap-3">
+              <Search className="h-5 w-5 text-neutral-500 shrink-0" />
               <input
                 type="text"
                 autoFocus
-                placeholder="Search pages, tools, or open jobs..."
+                placeholder="Search pages, predictions, or open roles..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full text-sm outline-none text-surface-900 placeholder:text-surface-400"
+                className="w-full text-sm outline-none bg-transparent text-white placeholder:text-neutral-500 font-medium"
               />
               <button
                 onClick={() => setSearchOpen(false)}
-                className="p-1 rounded-lg hover:bg-surface-100 text-surface-400"
+                className="p-1 rounded-lg hover:bg-white/[0.06] text-neutral-400 hover:text-white"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -199,7 +200,7 @@ export function TopBar() {
             <div className="p-4 max-h-80 overflow-y-auto space-y-4">
               {/* Quick Pages */}
               <div>
-                <p className="text-[11px] font-bold text-surface-400 uppercase tracking-wider mb-2">Quick Navigation</p>
+                <p className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-2">Quick Navigation</p>
                 <div className="space-y-1">
                   {quickNav.map((item) => (
                     <button
@@ -208,9 +209,9 @@ export function TopBar() {
                         setSearchOpen(false)
                         navigate(item.href)
                       }}
-                      className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-surface-50 text-xs font-medium text-surface-700 transition-colors text-left"
+                      className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-white/[0.05] text-xs font-semibold text-neutral-300 transition-colors text-left cursor-pointer"
                     >
-                      <item.icon className="h-4 w-4 text-primary-500" />
+                      <item.icon className="h-4 w-4 text-orange-400" />
                       <span>{item.label}</span>
                     </button>
                   ))}
@@ -220,7 +221,7 @@ export function TopBar() {
               {/* Matched Jobs */}
               {searchQuery.trim() && (
                 <div>
-                  <p className="text-[11px] font-bold text-surface-400 uppercase tracking-wider mb-2">Matched Roles</p>
+                  <p className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-2">Matched Roles</p>
                   <div className="space-y-1">
                     {matchedJobs.slice(0, 3).map((job) => (
                       <button
@@ -229,13 +230,13 @@ export function TopBar() {
                           setSearchOpen(false)
                           navigate('/candidate/job-fit')
                         }}
-                        className="w-full flex items-center justify-between p-2.5 rounded-xl hover:bg-surface-50 text-xs text-left"
+                        className="w-full flex items-center justify-between p-2.5 rounded-xl hover:bg-white/[0.05] text-xs text-left cursor-pointer"
                       >
                         <div>
-                          <p className="font-semibold text-surface-900">{job.title}</p>
-                          <p className="text-surface-400">{job.companyName}</p>
+                          <p className="font-semibold text-white">{job.title}</p>
+                          <p className="text-neutral-500">{job.companyName}</p>
                         </div>
-                        <span className="text-primary-600 font-medium">Analyze Fit →</span>
+                        <span className="text-orange-400 font-semibold">Predict Fit →</span>
                       </button>
                     ))}
                   </div>

@@ -17,14 +17,12 @@ const paddingStyles: Record<string, string> = {
   lg: 'p-8',
 }
 
-export function Card({ children, className, padding = 'md', hover = false, bordered = false, glass = false }: CardProps) {
+export function Card({ children, className, padding = 'md', hover = false }: CardProps) {
   return (
     <div
       className={cn(
-        'rounded-xl',
-        glass ? 'glass' : 'bg-white shadow-card',
-        bordered && 'border border-surface-200',
-        hover && 'transition-all duration-300 hover:shadow-card-hover hover:-translate-y-0.5 cursor-pointer',
+        'rounded-2xl bg-neutral-900/80 backdrop-blur-2xl border border-white/10 text-white shadow-[0_15px_35px_rgba(0,0,0,0.4)]',
+        hover && 'transition-all duration-300 hover:border-white/25 hover:shadow-[0_20px_45px_rgba(0,0,0,0.6)] hover:-translate-y-0.5 cursor-pointer',
         paddingStyles[padding],
         className
       )}
@@ -54,7 +52,7 @@ interface CardTitleProps {
 
 export function CardTitle({ children, className }: CardTitleProps) {
   return (
-    <h3 className={cn('text-lg font-semibold text-surface-900', className)}>
+    <h3 className={cn('text-base sm:text-lg font-bold text-white tracking-tight', className)}>
       {children}
     </h3>
   )
