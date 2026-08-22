@@ -148,15 +148,27 @@ export default function CandidateProfilePage() {
   // Save changes to Supabase
   const handleSave = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
-    if (!user?.id) return
 
     setIsSaving(true)
     setSaveSuccess('')
     setErrorMessage('')
 
     try {
+      // 1. Authenticate user from Supabase session
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser()
+
+      const targetUserId = authUser?.id || user?.id
+      if (!targetUserId) {
+        setErrorMessage('Please sign in before saving profile changes.')
+        setIsSaving(false)
+        return
+      }
+
+      // 2. Build structured payload
       const payload = {
-        full_name: candidateName || user.fullName,
+        full_name: candidateName || user?.fullName,
         headline,
         location,
         experience_years: experienceYears,
@@ -175,15 +187,16 @@ export default function CandidateProfilePage() {
         updated_at: new Date().toISOString(),
       }
 
+      // 3. Execute update
       let { error } = await supabase
         .from('profiles')
         .update(payload)
-        .eq('id', user.id)
+        .eq('id', targetUserId)
 
-      // Graceful fallback if specific optional columns (like certifications/preferences) are not yet migrated in Supabase
+      // Graceful fallback if specific columns are not yet refreshed in schema cache
       if (error && error.message.includes('schema cache')) {
         const fallbackPayload: Record<string, any> = {
-          full_name: candidateName || user.fullName,
+          full_name: candidateName || user?.fullName,
           headline,
           location,
           experience_years: experienceYears,
@@ -195,7 +208,7 @@ export default function CandidateProfilePage() {
         const retryResult = await supabase
           .from('profiles')
           .update(fallbackPayload)
-          .eq('id', user.id)
+          .eq('id', targetUserId)
 
         if (!retryResult.error) {
           error = null
@@ -204,12 +217,12 @@ export default function CandidateProfilePage() {
 
       if (error) {
         console.error('[Supabase Save Profile Error]', error)
-        setErrorMessage(`Failed to save changes: ${error.message}. Please execute the SQL migration in Supabase SQL editor.`)
+        setErrorMessage(`Failed to save changes: ${error.message}`)
       } else {
-        if (candidateName && candidateName !== user.fullName) {
-          setUser({ ...user, fullName: candidateName })
+        if (candidateName && candidateName !== user?.fullName) {
+          if (user) setUser({ ...user, fullName: candidateName })
         }
-        setSaveSuccess('Profile changes saved successfully!')
+        setSaveSuccess('Changes saved successfully.')
         setTimeout(() => setSaveSuccess(''), 4000)
       }
     } catch (err: any) {
