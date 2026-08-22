@@ -1319,3 +1319,251 @@ def get_learning_resources(payload: LearningResourcesRequest):
     )
 
 
+# ==========================================
+# AI Application Strategy & Readiness Models & Endpoint
+# ==========================================
+
+class ReadinessBreakdown(BaseModel):
+    skills_match: int
+    experience_match: int
+    resume_evidence: int
+    role_alignment: int
+    preferred_skills: int
+    education_match: int
+
+class ResumeSuggestionItem(BaseModel):
+    section: str
+    current_tip: str
+    proposed_improvement: str
+    rationale: str
+
+class ApplicationQuestionItem(BaseModel):
+    question: str
+    suggested_talking_points: List[str]
+
+class PotentialImprovementItem(BaseModel):
+    title: str
+    potential_impact: str  # 'High' | 'Medium' | 'Low'
+    current_score: int
+    potential_score: int
+    rationale: str
+
+class ApplicationStrategyRequest(BaseModel):
+    job_title: str
+    company_name: str
+    job_description: str
+    required_skills: Optional[List[str]] = []
+    preferred_skills: Optional[List[str]] = []
+    min_years_experience: Optional[int] = 3
+    candidate_name: Optional[str] = "Candidate"
+    candidate_skills: List[str]
+    candidate_experience_years: int
+    candidate_headline: Optional[str] = ""
+    candidate_education: Optional[str] = "Bachelor's Degree"
+    candidate_work_history: Optional[List[dict]] = []
+
+class ApplicationStrategyResponse(BaseModel):
+    application_readiness_score: int
+    readiness_breakdown: ReadinessBreakdown
+    strong_areas: List[str]
+    potential_issues: List[str]
+    missing_requirements: List[str]
+    recommended_action: str
+    strongest_evidence: List[str]
+    experience_to_emphasize: List[str]
+    projects_to_emphasize: List[str]
+    before_applying_actions: List[str]
+    suggested_application_approach: str
+    resume_suggestions: List[ResumeSuggestionItem]
+    cover_letter_draft: str
+    application_questions: List[ApplicationQuestionItem]
+    potential_improvements: List[PotentialImprovementItem]
+
+@app.post("/api/v1/application-strategy", response_model=ApplicationStrategyResponse)
+def generate_application_strategy(payload: ApplicationStrategyRequest):
+    cand_skills_set = {s.lower().strip() for s in payload.candidate_skills}
+    
+    req_skills = payload.required_skills or []
+    if not req_skills:
+        jd_lower = payload.job_description.lower()
+        extracted = []
+        for kw in KNOWN_PROGRAMMING_LANGUAGES | KNOWN_FRAMEWORKS | KNOWN_DATABASES:
+            if kw in jd_lower:
+                extracted.append(kw.title())
+        req_skills = extracted[:8] if extracted else ["React", "TypeScript", "Node.js", "Git"]
+
+    pref_skills = payload.preferred_skills or ["AWS", "Docker", "GraphQL", "CI/CD"]
+
+    matched = [s for s in req_skills if s.lower().strip() in cand_skills_set]
+    missing = [s for s in req_skills if s.lower().strip() not in cand_skills_set]
+    matched_pref = [s for s in pref_skills if s.lower().strip() in cand_skills_set]
+
+    # Application Readiness Weighting:
+    # Skills Match 30%, Experience Match 20%, Resume Evidence 20%, Role Alignment 15%, Preferred Skills 10%, Education 5%
+    skills_match = int((len(matched) / max(len(req_skills), 1)) * 100)
+    target_exp = max(payload.min_years_experience or 3, 1)
+    cand_exp = max(payload.candidate_experience_years, 0)
+    experience_match = min(int((cand_exp / target_exp) * 100), 100)
+    resume_evidence = min(75 + len(matched) * 3, 98)
+    
+    title_words = payload.job_title.lower().split()
+    cand_hl = (payload.candidate_headline or payload.candidate_name or "").lower()
+    matches_hl = [w for w in title_words if len(w) > 2 and w in cand_hl]
+    role_align = 92 if len(matches_hl) >= 2 else (80 if len(matches_hl) == 1 else 60)
+    
+    pref_score = int((len(matched_pref) / max(len(pref_skills), 1)) * 100) if pref_skills else 70
+    edu_score = 90
+
+    readiness_score = int(round(
+        skills_match * 0.30 +
+        experience_match * 0.20 +
+        resume_evidence * 0.20 +
+        role_align * 0.15 +
+        pref_score * 0.10 +
+        edu_score * 0.05
+    ))
+    readiness_score = max(min(readiness_score, 99), 15)
+
+    # Strong Areas
+    strong_areas = [
+        f"{skills_match}% overlap on core required technical skills ({', '.join(matched[:3]) if matched else 'core practices'}).",
+        f"{cand_exp} years of relevant domain engineering background aligning with seniority requirements.",
+        f"Demonstrated role alignment ({role_align}%) between target title and profile headline.",
+    ]
+    if matched_pref:
+        strong_areas.append(f"Bonus qualifications in preferred technologies: {', '.join(matched_pref)}.")
+
+    # Potential Issues
+    potential_issues = []
+    if missing:
+        potential_issues.append(f"Missing explicit resume proof for required competencies: {', '.join(missing[:3])}.")
+    if cand_exp < target_exp:
+        potential_issues.append(f"Candidate has {cand_exp} years vs job specification of {target_exp}+ years.")
+    if not potential_issues:
+        potential_issues.append("No critical blockers detected. Candidate meets or exceeds all criteria.")
+
+    # Recommended Action
+    if readiness_score >= 80:
+        recommended_action = "Apply with Confidence"
+    elif readiness_score >= 60:
+        recommended_action = "Apply with Tailored Profile"
+    else:
+        recommended_action = "Close Key Gaps Before Applying"
+
+    # Strategy points
+    strongest_evidence = matched[:4] if matched else ["Core Software Engineering", "Problem Solving", "Git"]
+    experience_to_emphasize = [
+        f"Production achievements involving {matched[0]}" if matched else "Full lifecycle application development.",
+        f"Collaborative agile delivery and measurable KPIs from past {cand_exp} years.",
+    ]
+    projects_to_emphasize = [
+        f"Web or cloud application demonstrating scalable {matched[0] if matched else 'architecture'}."
+    ]
+    before_applying = [
+        f"Highlight production impact and KPIs for {matched[0]}" if matched else "Add quantitative metrics.",
+        f"If you have hands-on exposure to {missing[0]}, document it in your technical skills." if missing else "Review system design trade-offs.",
+        f"Tailor your profile headline specifically for {payload.job_title} positions at {payload.company_name}.",
+    ]
+    approach = (
+        f"Position yourself as a solutions-driven engineer specializing in {', '.join(matched[:2]) if matched else 'modern architectures'}. "
+        f"In your initial screening, highlight how your {cand_exp} years of experience directly address {payload.company_name}'s technical objectives."
+    )
+
+    # Resume suggestions
+    resume_suggestions = [
+        ResumeSuggestionItem(
+            section="Summary / Headline",
+            current_tip=f"Tailor to '{payload.job_title} | {', '.join(matched[:2]) if matched else 'Full-Stack Developer'}'",
+            proposed_improvement=f"Results-oriented {payload.job_title} with {cand_exp}+ years of experience building resilient systems with {', '.join(matched[:3]) if matched else 'modern technologies'}.",
+            rationale="Immediate keyword alignment for recruiter screening.",
+        ),
+        ResumeSuggestionItem(
+            section="Work Experience",
+            current_tip="Add quantifiable outcomes",
+            proposed_improvement=f"Architected and deployed production features using {matched[0] if matched else 'modern frameworks'}, improving system performance by 25% and reducing response times.",
+            rationale="Demonstrates measurable business value rather than just a list of duties.",
+        ),
+    ]
+
+    # Cover Letter Draft
+    cover_letter = (
+        f"Dear Hiring Team at {payload.company_name},\n\n"
+        f"I am writing to express my strong enthusiasm for the {payload.job_title} position. With over {cand_exp} years of "
+        f"hands-on engineering experience and proven competency in {', '.join(matched[:3]) if matched else 'software development'}, "
+        f"I am excited by the opportunity to contribute to {payload.company_name}'s engineering initiatives.\n\n"
+        f"In my previous roles, I have focused on delivering scalable, maintainable solutions while collaborating closely "
+        f"across cross-functional teams. My technical background aligns well with your requirements for {payload.job_title}, "
+        f"and I am eager to bring my problem-solving abilities and dedication to your organization.\n\n"
+        f"Thank you for your time and consideration. I look forward to the possibility of discussing how my experience can support {payload.company_name}.\n\n"
+        f"Sincerely,\n{payload.candidate_name or 'Candidate'}"
+    )
+
+    # Application Questions
+    app_questions = [
+        ApplicationQuestionItem(
+            question=f"Why are you interested in joining {payload.company_name} as a {payload.job_title}?",
+            suggested_talking_points=[
+                f"Express alignment with {payload.company_name}'s technical mission and engineering standards.",
+                f"Highlight your depth in {matched[0] if matched else 'core technologies'} and enthusiasm for tackling complex scalability challenges.",
+                f"Mention how this role represents the next natural step in your {cand_exp}-year engineering career.",
+            ]
+        ),
+        ApplicationQuestionItem(
+            question="Describe a challenging technical project you led or contributed significantly to.",
+            suggested_talking_points=[
+                "State the problem statement, architectural constraints, and user volume.",
+                f"Explain how you utilized {matched[0] if matched else 'clean architecture'} to resolve latency or reliability issues.",
+                "Quantify the measurable business result (e.g. reduced load time by 30%, zero downtime).",
+            ]
+        )
+    ]
+
+    # Potential Improvements Simulation
+    potential_improvements = []
+    if missing:
+        potential_improvements.append(
+            PotentialImprovementItem(
+                title=f"Add verified hands-on project demonstrating {missing[0]}",
+                potential_impact="High",
+                current_score=readiness_score,
+                potential_score=min(readiness_score + 12, 98),
+                rationale=f"{missing[0]} is explicitly requested in the job requirements. Documenting project proof increases technical coverage.",
+            )
+        )
+    potential_improvements.append(
+        PotentialImprovementItem(
+            title="Add measurable production metrics to work experience",
+            potential_impact="Medium",
+            current_score=readiness_score,
+            potential_score=min(readiness_score + 6, 98),
+            rationale="Quantifiable results (KPIs, latency reductions) strengthen the candidate evidence score.",
+        )
+    )
+
+    return ApplicationStrategyResponse(
+        application_readiness_score=readiness_score,
+        readiness_breakdown=ReadinessBreakdown(
+            skills_match=skills_match,
+            experience_match=experience_match,
+            resume_evidence=resume_evidence,
+            role_alignment=role_align,
+            preferred_skills=pref_score,
+            education_match=edu_score,
+        ),
+        strong_areas=strong_areas,
+        potential_issues=potential_issues,
+        missing_requirements=missing,
+        recommended_action=recommended_action,
+        strongest_evidence=strongest_evidence,
+        experience_to_emphasize=experience_to_emphasize,
+        projects_to_emphasize=projects_to_emphasize,
+        before_applying_actions=before_applying,
+        suggested_application_approach=approach,
+        resume_suggestions=resume_suggestions,
+        cover_letter_draft=cover_letter,
+        application_questions=app_questions,
+        potential_improvements=potential_improvements,
+    )
+
+
+

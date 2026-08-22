@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge'
 import { ScoreRing } from '@/components/ui/ScoreRing'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/lib/supabase'
+import { ApplicationAssistantModal } from '@/components/candidate/ApplicationAssistantModal'
 import {
   Briefcase,
   Search,
@@ -19,6 +20,7 @@ import {
   AlertTriangle,
   RefreshCw,
   Award,
+  Send,
 } from 'lucide-react'
 
 interface BenchmarkJob {
@@ -237,6 +239,15 @@ export default function JobRecommendationsPage() {
   const [candidateName, setCandidateName] = useState<string>('')
   const [hasResumeData, setHasResumeData] = useState<boolean>(false)
   const [isLoadingProfile, setIsLoadingProfile] = useState<boolean>(true)
+
+  // AI Application Assistant state
+  const [selectedApplyJob, setSelectedApplyJob] = useState<BenchmarkJob | null>(null)
+  const [isApplyModalOpen, setIsApplyModalOpen] = useState<boolean>(false)
+
+  const handleOpenApplyAssistant = (job: BenchmarkJob) => {
+    setSelectedApplyJob(job)
+    setIsApplyModalOpen(true)
+  }
 
   // 1. Fetch real candidate profile from Supabase with dual-layer synchronization
   useEffect(() => {
@@ -632,8 +643,16 @@ export default function JobRecommendationsPage() {
                   <div className="flex flex-col gap-2">
                     <Button
                       size="sm"
+                      onClick={() => handleOpenApplyAssistant(job)}
+                      className="w-full gap-1.5 text-xs shadow-[0_0_20px_rgba(255,0,94,0.35)] cursor-pointer"
+                    >
+                      <Send className="h-3.5 w-3.5" /> Apply with Assistant
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={() => handlePredictFitForJob(job)}
-                      className="w-full gap-1 text-xs shadow-[0_0_20px_rgba(255,0,94,0.3)] cursor-pointer"
+                      className="w-full gap-1 text-xs cursor-pointer"
                     >
                       <Target className="h-3.5 w-3.5" /> Predict Fit Score
                     </Button>
@@ -651,6 +670,28 @@ export default function JobRecommendationsPage() {
           </Card>
         )}
       </div>
+
+      {/* AI Application Assistant Modal */}
+      {selectedApplyJob && (
+        <ApplicationAssistantModal
+          job={{
+            id: selectedApplyJob.id,
+            title: selectedApplyJob.title,
+            companyName: selectedApplyJob.companyName,
+            description: selectedApplyJob.description,
+            requiredSkills: selectedApplyJob.requiredSkills,
+            preferredSkills: selectedApplyJob.preferredSkills,
+            experienceYears: selectedApplyJob.experienceYears,
+            location: selectedApplyJob.location,
+            workType: selectedApplyJob.workType,
+            salaryRange: selectedApplyJob.salaryRange,
+            matchScore: selectedApplyJob.fitScore,
+            hiringCompetitiveness: selectedApplyJob.fitScore,
+          }}
+          isOpen={isApplyModalOpen}
+          onClose={() => setIsApplyModalOpen(false)}
+        />
+      )}
     </div>
   )
 }

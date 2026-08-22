@@ -184,6 +184,85 @@ export interface SkillGapPackage {
   resources: LearningResourceItem[]
 }
 
+export interface ReadinessBreakdown {
+  skills_match: number
+  experience_match: number
+  resume_evidence: number
+  role_alignment: number
+  preferred_skills: number
+  education_match: number
+}
+
+export interface ResumeSuggestionItem {
+  section: string
+  current_tip: string
+  proposed_improvement: string
+  rationale: string
+}
+
+export interface ApplicationQuestionItem {
+  question: string
+  suggested_talking_points: string[]
+}
+
+export interface PotentialImprovementItem {
+  title: string
+  potential_impact: 'High' | 'Medium' | 'Low' | string
+  current_score: number
+  potential_score: number
+  rationale: string
+}
+
+export interface ApplicationStrategyResponse {
+  application_readiness_score: number
+  readiness_breakdown: ReadinessBreakdown
+  strong_areas: string[]
+  potential_issues: string[]
+  missing_requirements: string[]
+  recommended_action: string
+  strongest_evidence: string[]
+  experience_to_emphasize: string[]
+  projects_to_emphasize: string[]
+  before_applying_actions: string[]
+  suggested_application_approach: string
+  resume_suggestions: ResumeSuggestionItem[]
+  cover_letter_draft: string
+  application_questions: ApplicationQuestionItem[]
+  potential_improvements: PotentialImprovementItem[]
+}
+
+export interface ApplicationRecord {
+  id: string
+  user_id: string
+  job_id: string
+  company_name: string
+  job_title: string
+  job_url?: string
+  job_description?: string
+  match_score: number
+  hiring_competitiveness: number
+  application_readiness: number
+  missing_skills?: string[]
+  strengths?: string[]
+  resume_version?: string
+  status:
+    | 'Saved'
+    | 'Applied'
+    | 'Recruiter Review'
+    | 'Interview'
+    | 'Technical Round'
+    | 'Final Interview'
+    | 'Offer'
+    | 'Rejected'
+    | 'Withdrawn'
+    | string
+  notes?: string
+  cover_letter?: string
+  applied_at?: string
+  created_at: string
+  updated_at: string
+}
+
 export interface LearningResourcesResponse {
   has_gaps: boolean
   skill_packages: SkillGapPackage[]
@@ -1068,6 +1147,151 @@ export const api = {
           'Highlight concrete production metrics and system scalability improvements.',
           'Re-run the AI Hiring Predictor to verify the recalculated match index and hiring probability.',
         ],
+      }
+    }
+  },
+
+  async getApplicationStrategy(payload: {
+    job_title: string
+    company_name: string
+    job_description: string
+    required_skills?: string[]
+    preferred_skills?: string[]
+    min_years_experience?: number
+    candidate_name?: string
+    candidate_skills: string[]
+    candidate_experience_years: number
+    candidate_headline?: string
+    candidate_education?: string
+    candidate_work_history?: any[]
+  }): Promise<ApplicationStrategyResponse> {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/application-strategy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) throw new Error('API request failed')
+      return await res.json()
+    } catch {
+      // Deterministic client-side evaluator
+      const candSkillsSet = new Set(payload.candidate_skills.map((s) => s.toLowerCase().trim()))
+      const reqSkills = payload.required_skills && payload.required_skills.length > 0
+        ? payload.required_skills
+        : ['React', 'TypeScript', 'Node.js', 'Git']
+      const prefSkills = payload.preferred_skills || ['AWS', 'Docker', 'GraphQL', 'CI/CD']
+
+      const matched = reqSkills.filter((s) => candSkillsSet.has(s.toLowerCase().trim()))
+      const missing = reqSkills.filter((s) => !candSkillsSet.has(s.toLowerCase().trim()))
+      const matchedPref = prefSkills.filter((s) => candSkillsSet.has(s.toLowerCase().trim()))
+
+      const skillsMatch = Math.round((matched.length / Math.max(reqSkills.length, 1)) * 100)
+      const targetExp = Math.max(payload.min_years_experience || 3, 1)
+      const candExp = Math.max(payload.candidate_experience_years, 0)
+      const expMatch = Math.min(Math.round((candExp / targetExp) * 100), 100)
+      const resumeEvidence = Math.min(75 + matched.length * 3, 98)
+
+      let roleAlign = 60
+      const titleTokens = payload.job_title.toLowerCase().split(/\s+/)
+      const candHl = (payload.candidate_headline || payload.candidate_name || '').toLowerCase()
+      const titleMatches = titleTokens.filter((t) => t.length > 2 && candHl.includes(t))
+      if (titleMatches.length >= 2) roleAlign = 92
+      else if (titleMatches.length === 1) roleAlign = 80
+
+      const prefScore = prefSkills.length > 0 ? Math.round((matchedPref.length / prefSkills.length) * 100) : 70
+      const readinessScore = Math.max(
+        Math.min(
+          Math.round(
+            skillsMatch * 0.30 +
+              expMatch * 0.20 +
+              resumeEvidence * 0.20 +
+              roleAlign * 0.15 +
+              prefScore * 0.10 +
+              90 * 0.05
+          ),
+          99
+        ),
+        20
+      )
+
+      return {
+        application_readiness_score: readinessScore,
+        readiness_breakdown: {
+          skills_match: skillsMatch,
+          experience_match: expMatch,
+          resume_evidence: resumeEvidence,
+          role_alignment: roleAlign,
+          preferred_skills: prefScore,
+          education_match: 90,
+        },
+        strong_areas: [
+          `${skillsMatch}% overlap on core required technical skills (${matched.slice(0, 3).join(', ') || 'essential development'}).`,
+          `${candExp} years of relevant domain engineering background aligning with seniority requirements.`,
+          `Demonstrated role alignment (${roleAlign}%) between target title and profile headline.`,
+        ],
+        potential_issues: missing.length > 0
+          ? [`Missing explicit resume proof for required competencies: ${missing.slice(0, 3).join(', ')}.`]
+          : ['No critical blockers detected. Candidate meets or exceeds all criteria.'],
+        missing_requirements: missing,
+        recommended_action: readinessScore >= 80 ? 'Apply with Confidence' : (readinessScore >= 60 ? 'Apply with Tailored Profile' : 'Close Key Gaps Before Applying'),
+        strongest_evidence: matched.slice(0, 4),
+        experience_to_emphasize: [
+          `Production achievements involving ${matched[0] || 'core technologies'}.`,
+          `Collaborative agile delivery and measurable KPIs from past ${candExp} years.`,
+        ],
+        projects_to_emphasize: [
+          `Web or cloud application demonstrating scalable ${matched[0] || 'architecture'}.`,
+        ],
+        before_applying_actions: [
+          `Highlight production impact and KPIs for ${matched[0] || 'key projects'}.`,
+          missing.length > 0 ? `If you have hands-on exposure to ${missing[0]}, document it in your technical skills.` : 'Review system design trade-offs.',
+          `Tailor your profile headline specifically for ${payload.job_title} positions at ${payload.company_name}.`,
+        ],
+        suggested_application_approach: `Position yourself as a solutions-driven engineer specializing in ${matched.slice(0, 2).join(', ') || 'modern stacks'}. Highlight how your ${candExp} years of experience directly address ${payload.company_name}'s goals.`,
+        resume_suggestions: [
+          {
+            section: 'Summary / Headline',
+            current_tip: `Tailor to '${payload.job_title} | ${matched.slice(0, 2).join(', ') || 'Full-Stack'}'`,
+            proposed_improvement: `Results-oriented ${payload.job_title} with ${candExp}+ years of experience building resilient systems with ${matched.slice(0, 3).join(', ') || 'modern stacks'}.`,
+            rationale: 'Immediate keyword alignment for recruiter screening.',
+          },
+          {
+            section: 'Work Experience',
+            current_tip: 'Add quantifiable outcomes',
+            proposed_improvement: `Architected and deployed production features using ${matched[0] || 'modern frameworks'}, improving system performance by 25% and reducing response times.`,
+            rationale: 'Demonstrates measurable business value rather than just duties.',
+          },
+        ],
+        cover_letter_draft: `Dear Hiring Team at ${payload.company_name},\n\nI am writing to express my strong enthusiasm for the ${payload.job_title} position. With over ${candExp} years of hands-on engineering experience and proven competency in ${matched.slice(0, 3).join(', ') || 'software engineering'}, I am excited by the opportunity to contribute to ${payload.company_name}'s initiatives.\n\nIn my previous roles, I have focused on delivering scalable, maintainable solutions while collaborating closely across cross-functional teams. My technical background aligns well with your requirements for ${payload.job_title}.\n\nThank you for your consideration. I look forward to discussing how my experience can support ${payload.company_name}.\n\nSincerely,\n${payload.candidate_name || 'Candidate'}`,
+        application_questions: [
+          {
+            question: `Why are you interested in joining ${payload.company_name} as a ${payload.job_title}?`,
+            suggested_talking_points: [
+              `Express alignment with ${payload.company_name}'s engineering mission.`,
+              `Highlight your depth in ${matched[0] || 'core technologies'} and enthusiasm for scalability.`,
+              `Mention how this role represents the next natural step in your ${candExp}-year engineering career.`,
+            ],
+          },
+        ],
+        potential_improvements: missing.length > 0
+          ? [
+              {
+                title: `Add verified hands-on project demonstrating ${missing[0]}`,
+                potential_impact: 'High',
+                current_score: readinessScore,
+                potential_score: Math.min(readinessScore + 12, 98),
+                rationale: `${missing[0]} is explicitly requested in the requirements. Adding project proof increases technical coverage.`,
+              },
+            ]
+          : [
+              {
+                title: 'Add measurable production metrics to work experience',
+                potential_impact: 'Medium',
+                current_score: readinessScore,
+                potential_score: Math.min(readinessScore + 6, 98),
+                rationale: 'Quantifiable results (KPIs, latency reductions) strengthen the candidate evidence score.',
+              },
+            ],
       }
     }
   },
