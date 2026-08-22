@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -57,6 +57,7 @@ const ACTIVE_ROLES = [
 
 export default function JobFitPage() {
   const { user } = useAuthStore()
+  const location = useLocation()
 
   // Real candidate profile loaded from Supabase
   const [candidateSkills, setCandidateSkills] = useState<string[]>([])
@@ -66,8 +67,12 @@ export default function JobFitPage() {
   const [isLoadingProfile, setIsLoadingProfile] = useState<boolean>(true)
 
   // Evaluation state
-  const [jobDescription, setJobDescription] = useState('')
-  const [selectedRoleId, setSelectedRoleId] = useState<string>('')
+  const [jobDescription, setJobDescription] = useState(
+    (location.state as any)?.prefilledDescription || ''
+  )
+  const [selectedRoleId, setSelectedRoleId] = useState<string>(
+    (location.state as any)?.preselectedJobId || ''
+  )
   const [assessmentResult, setAssessmentResult] = useState<FitScoreResult | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
@@ -102,7 +107,21 @@ export default function JobFitPage() {
 
           if (Array.isArray(data.skills)) {
             const skillNames = data.skills.map((s: any) => (typeof s === 'string' ? s : s.name))
-            setCandidateSkills(skillNames.filter(Boolean))
+            const cleanSkills = skillNames.filter(Boolean)
+            setCandidateSkills(cleanSkills)
+
+            // Auto-evaluate if navigated with prefilled description
+            const navDesc = (location.state as any)?.prefilledDescription
+            if (navDesc && cleanSkills.length > 0) {
+              api.evaluateFit(
+                cleanSkills,
+                Number(data.experience_years) || 0,
+                (location.state as any)?.preselectedJobId,
+                navDesc,
+                data.headline,
+                data.full_name
+              ).then((res) => setAssessmentResult(res))
+            }
           }
         }
       } catch (err) {
