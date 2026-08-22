@@ -1,75 +1,74 @@
 -- ==============================================================================
--- CareerAI Supabase Migration: Profiles Table & Automated Auth Trigger
+-- CareerAI Supabase Database Setup Script (Run this in Supabase SQL Editor)
 -- ==============================================================================
 
--- 1. Create Profiles Table (if it doesn't already exist)
-create table if not exists public.profiles (
-  id uuid references auth.users on delete cascade primary key,
-  email text not null,
-  full_name text,
-  role text default 'candidate',
-  organization_id uuid,
-  avatar_url text,
-  created_at timestamp with time zone default timezone('utc'::text, now()),
-  updated_at timestamp with time zone default timezone('utc'::text, now())
+-- 1. Create Profiles Table
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  full_name TEXT,
+  role TEXT DEFAULT 'candidate',
+  organization_id UUID,
+  avatar_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 2. Enable Row Level Security (RLS)
-alter table public.profiles enable row level security;
+-- 2. Enable Row Level Security
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
--- 3. Drop existing policies if any to prevent conflicts
-drop policy if exists "Users can view own profile" on public.profiles;
-drop policy if exists "Users can insert own profile" on public.profiles;
-drop policy if exists "Users can update own profile" on public.profiles;
+-- 3. Clean up any existing policies
+DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Enable all access for own profile" ON public.profiles;
 
--- 4. RLS Policies
--- SELECT: Authenticated user can only read their own profile
-create policy "Users can view own profile"
-  on public.profiles for select
-  to authenticated
-  using (auth.uid() = id);
+-- 4. Create RLS Policies
+CREATE POLICY "Users can view own profile"
+  ON public.profiles FOR SELECT
+  TO authenticated
+  USING (auth.uid() = id);
 
--- INSERT: Authenticated user can only insert their own profile
-create policy "Users can insert own profile"
-  on public.profiles for insert
-  to authenticated
-  with check (auth.uid() = id);
+CREATE POLICY "Users can insert own profile"
+  ON public.profiles FOR INSERT
+  TO authenticated
+  WITH CHECK (auth.uid() = id);
 
--- UPDATE: Authenticated user can only update their own profile
-create policy "Users can update own profile"
-  on public.profiles for update
-  to authenticated
-  using (auth.uid() = id)
-  with check (auth.uid() = id);
+CREATE POLICY "Users can update own profile"
+  ON public.profiles FOR UPDATE
+  TO authenticated
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
 
--- 5. Automated Trigger to create Profile on auth.users creation (SECURITY DEFINER)
--- This ensures profile creation succeeds atomically in PostgreSQL even before email confirmation!
-create or replace function public.handle_new_user()
-returns trigger
-language plpgsql
-security definer set search_path = public
-as $$
-begin
-  insert into public.profiles (id, email, full_name, role, created_at, updated_at)
-  values (
+-- 5. Auto-Profile Creation Trigger (Runs with SECURITY DEFINER privileges)
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, full_name, role, created_at, updated_at)
+  VALUES (
     new.id,
     new.email,
-    coalesce(new.raw_user_meta_data->>'full_name', ''),
-    coalesce(new.raw_user_meta_data->>'role', 'candidate'),
+    COALESCE(new.raw_user_meta_data->>'full_name', ''),
+    COALESCE(new.raw_user_meta_data->>'role', 'candidate'),
     now(),
     now()
   )
-  on conflict (id) do update set
-    email = excluded.email,
-    full_name = coalesce(excluded.full_name, profiles.full_name),
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email,
+    full_name = COALESCE(EXCLUDED.full_name, profiles.full_name),
     updated_at = now();
-  return new;
-end;
+  RETURN new;
+END;
 $$;
 
--- Drop trigger if exists and recreate
-drop trigger if exists on_auth_user_created on auth.users;
+-- 6. Attach Trigger to auth.users table
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 
-create trigger on_auth_user_created
-  after insert on auth.users
-  for each row execute procedure public.handle_new_user();
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.handle_new_user();
