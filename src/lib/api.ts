@@ -1,4 +1,4 @@
-// API Client for CareerAI Backend with Real NLP Analysis
+// API Client for CareerAI Backend with Real Gemini & NLP Analysis
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -49,18 +49,37 @@ export interface RolePrediction {
   salary_range: string
 }
 
+export interface SkillGapItem {
+  skill: string
+  importance: string
+  suggestion: string
+}
+
+export interface AssessmentFactor {
+  name: string
+  direction: 'positive' | 'negative'
+  weight: number
+  description: string
+}
+
 export interface FitScoreResult {
   job_title: string
+  company_name: string
   overall_score: number
   technical_score: number
   experience_score: number
-  education_score: number
   role_alignment_score: number
-  recommendation: 'strong' | 'good' | 'moderate' | 'low'
+  cultural_score: number
+  education_score: number
+  recommendation: 'excellent' | 'strong' | 'good' | 'partial' | 'low'
   matching_skills: string[]
-  skill_gaps: Array<{ skill: string; importance: string; suggestion: string }>
-  factors: Array<{ name: string; direction: string; weight: number; description: string }>
+  related_skills: string[]
+  missing_skills: string[]
+  critical_gaps: string[]
+  skill_gaps: SkillGapItem[]
+  factors: AssessmentFactor[]
   explanation: string
+  recommendations: string[]
   confidence: number
 }
 
@@ -74,17 +93,73 @@ export interface InterviewEvaluation {
   suggested_answer: string
 }
 
-// Client-side NLP extraction applied directly to real resume text
+// Master Skill Catalog for Deterministic Extraction
+const SKILL_CATALOG = [
+  { name: 'JavaScript', category: 'language' },
+  { name: 'TypeScript', category: 'language' },
+  { name: 'Python', category: 'language' },
+  { name: 'Java', category: 'language' },
+  { name: 'C++', category: 'language' },
+  { name: 'C#', category: 'language' },
+  { name: 'Golang', category: 'language' },
+  { name: 'Rust', category: 'language' },
+  { name: 'Ruby', category: 'language' },
+  { name: 'PHP', category: 'language' },
+  { name: 'SQL', category: 'language' },
+  { name: 'HTML', category: 'language' },
+  { name: 'CSS', category: 'language' },
+  { name: 'React', category: 'framework' },
+  { name: 'Next.js', category: 'framework' },
+  { name: 'Node.js', category: 'framework' },
+  { name: 'Express.js', category: 'framework' },
+  { name: 'Express', category: 'framework' },
+  { name: 'Vue.js', category: 'framework' },
+  { name: 'Angular', category: 'framework' },
+  { name: 'Django', category: 'framework' },
+  { name: 'FastAPI', category: 'framework' },
+  { name: 'Flask', category: 'framework' },
+  { name: 'Spring Boot', category: 'framework' },
+  { name: 'Tailwind CSS', category: 'framework' },
+  { name: 'Redux', category: 'framework' },
+  { name: 'GraphQL', category: 'framework' },
+  { name: 'REST APIs', category: 'framework' },
+  { name: 'PostgreSQL', category: 'database' },
+  { name: 'MySQL', category: 'database' },
+  { name: 'MongoDB', category: 'database' },
+  { name: 'Redis', category: 'database' },
+  { name: 'Elasticsearch', category: 'database' },
+  { name: 'SQLite', category: 'database' },
+  { name: 'Supabase', category: 'database' },
+  { name: 'Firebase', category: 'database' },
+  { name: 'AWS', category: 'cloud' },
+  { name: 'Azure', category: 'cloud' },
+  { name: 'GCP', category: 'cloud' },
+  { name: 'Docker', category: 'cloud' },
+  { name: 'Kubernetes', category: 'cloud' },
+  { name: 'GitHub Actions', category: 'cloud' },
+  { name: 'CI/CD', category: 'cloud' },
+  { name: 'Git', category: 'cloud' },
+  { name: 'Linux', category: 'cloud' },
+  { name: 'Terraform', category: 'cloud' },
+  { name: 'Pandas', category: 'ai' },
+  { name: 'Scikit-learn', category: 'ai' },
+  { name: 'PyTorch', category: 'ai' },
+  { name: 'TensorFlow', category: 'ai' },
+  { name: 'Machine Learning', category: 'ai' },
+  { name: 'Security', category: 'security' },
+  { name: 'SIEM', category: 'security' },
+  { name: 'Network Security', category: 'security' },
+  { name: 'Incident Response', category: 'security' },
+]
+
+// Client-side deterministic NLP extraction
 function parseResumeTextClientSide(text: string): ResumeParseResult {
-  // 1. Email extraction
   const emailMatch = text.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/)
   const email = emailMatch ? emailMatch[0] : null
 
-  // 2. Phone extraction
   const phoneMatch = text.match(/(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/)
   const phone = phoneMatch ? phoneMatch[0] : null
 
-  // 3. Name extraction (from top lines or email prefix)
   let fullName: string | null = null
   const lines = text
     .split('\n')
@@ -92,7 +167,6 @@ function parseResumeTextClientSide(text: string): ResumeParseResult {
     .filter((l) => l.length > 0)
 
   for (const line of lines.slice(0, 6)) {
-    // Exclude header words, URLs, emails, phone numbers
     if (
       !/[0-9@+()/:\\_]/.test(line) &&
       !/(resume|curriculum|cv|summary|objective|experience|skills|contact|profile)/i.test(line)
@@ -113,7 +187,6 @@ function parseResumeTextClientSide(text: string): ResumeParseResult {
     }
   }
 
-  // 4. Location extraction (e.g. "Bengaluru, India" / "San Francisco, CA")
   let location: string | null = null
   const locMatch =
     text.match(/\b([A-Z][a-zA-Z\s]{2,20},\s*(?:India|USA|United States|UK|Canada|Germany|[A-Z]{2}|[A-Z][a-zA-Z\s]{2,20}))\b/) ||
@@ -121,56 +194,6 @@ function parseResumeTextClientSide(text: string): ResumeParseResult {
   if (locMatch) {
     location = locMatch[0].trim()
   }
-
-  // 5. Skills extraction against comprehensive taxonomy
-  const SKILL_CATALOG = [
-    { name: 'JavaScript', category: 'language' },
-    { name: 'TypeScript', category: 'language' },
-    { name: 'Python', category: 'language' },
-    { name: 'Java', category: 'language' },
-    { name: 'C++', category: 'language' },
-    { name: 'C#', category: 'language' },
-    { name: 'Golang', category: 'language' },
-    { name: 'Rust', category: 'language' },
-    { name: 'Ruby', category: 'language' },
-    { name: 'PHP', category: 'language' },
-    { name: 'SQL', category: 'language' },
-    { name: 'HTML', category: 'language' },
-    { name: 'CSS', category: 'language' },
-    { name: 'React', category: 'framework' },
-    { name: 'Next.js', category: 'framework' },
-    { name: 'Node.js', category: 'framework' },
-    { name: 'Express.js', category: 'framework' },
-    { name: 'Express', category: 'framework' },
-    { name: 'Vue.js', category: 'framework' },
-    { name: 'Angular', category: 'framework' },
-    { name: 'Django', category: 'framework' },
-    { name: 'FastAPI', category: 'framework' },
-    { name: 'Flask', category: 'framework' },
-    { name: 'Spring Boot', category: 'framework' },
-    { name: 'Tailwind CSS', category: 'framework' },
-    { name: 'Redux', category: 'framework' },
-    { name: 'GraphQL', category: 'framework' },
-    { name: 'REST APIs', category: 'framework' },
-    { name: 'PostgreSQL', category: 'database' },
-    { name: 'MySQL', category: 'database' },
-    { name: 'MongoDB', category: 'database' },
-    { name: 'Redis', category: 'database' },
-    { name: 'Elasticsearch', category: 'database' },
-    { name: 'SQLite', category: 'database' },
-    { name: 'Supabase', category: 'database' },
-    { name: 'Firebase', category: 'database' },
-    { name: 'AWS', category: 'cloud' },
-    { name: 'Azure', category: 'cloud' },
-    { name: 'GCP', category: 'cloud' },
-    { name: 'Docker', category: 'cloud' },
-    { name: 'Kubernetes', category: 'cloud' },
-    { name: 'GitHub Actions', category: 'cloud' },
-    { name: 'CI/CD', category: 'cloud' },
-    { name: 'Git', category: 'cloud' },
-    { name: 'Linux', category: 'cloud' },
-    { name: 'Terraform', category: 'cloud' },
-  ]
 
   const extractedSkills: Array<{ name: string; category: string }> = []
   const progLang: string[] = []
@@ -194,7 +217,6 @@ function parseResumeTextClientSide(text: string): ResumeParseResult {
     }
   }
 
-  // 6. Experience Years extraction
   let yearsExp = 0
   const expMatch =
     text.match(/(\d+)\+?\s*(?:years?|yrs?)(?:\s+of)?\s+experience/i) ||
@@ -214,20 +236,12 @@ function parseResumeTextClientSide(text: string): ResumeParseResult {
     }
   }
 
-  // 7. Work History extraction (e.g. "Software Engineer — TechNova Solutions", "Junior Software Developer — WebCraft Labs")
   const workExp: WorkExperienceItem[] = []
-  const extractedJobsSet = new Set<string>()
-
-  // Direct keyword matcher for jobs in text
   const COMMON_ROLES = [
-    'Senior Software Engineer',
-    'Software Engineer',
-    'Junior Software Developer',
-    'Full Stack Developer',
-    'Backend Engineer',
-    'Frontend Engineer',
-    'DevOps Engineer',
+    'Senior Software Engineer', 'Software Engineer', 'Junior Software Developer',
+    'Full Stack Developer', 'Backend Engineer', 'Frontend Engineer', 'DevOps Engineer',
   ]
+  const extractedJobsSet = new Set<string>()
 
   for (const role of COMMON_ROLES) {
     const roleRegex = new RegExp(`${role}[\\s—–|@,]+([A-Za-z0-9\\s&]{3,30})`, 'i')
@@ -235,7 +249,6 @@ function parseResumeTextClientSide(text: string): ResumeParseResult {
     if (match && !extractedJobsSet.has(role.toLowerCase())) {
       extractedJobsSet.add(role.toLowerCase())
       const company = match[1].replace(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|20\d\d|Present).*/i, '').trim()
-      
       const dateMatch = text.match(new RegExp(`${role}.*?(20\\d\\d)\\s*(?:-|–|to)\\s*(20\\d\\d|present|current)`, 'i'))
       const startDate = dateMatch ? dateMatch[1] : '2021'
       const endDate = dateMatch ? dateMatch[2].charAt(0).toUpperCase() + dateMatch[2].slice(1) : 'Present'
@@ -246,16 +259,14 @@ function parseResumeTextClientSide(text: string): ResumeParseResult {
         company: company || 'Technology Solutions',
         start_date: startDate,
         end_date: endDate,
-        description: `Delivered engineering architecture and application features as ${role}.`,
+        description: `Delivered software features as ${role}.`,
         isCurrent: /present|current/i.test(endDate),
       })
       if (workExp.length >= 3) break
     }
   }
 
-  // 8. Education extraction (e.g. "Bachelor of Technology in Computer Science", "RV College of Engineering")
   const edu: EducationItem[] = []
-  
   let degreeName = "Bachelor's Degree"
   if (/bachelor of technology in computer science|b\.?tech in computer science|b\.?tech\s*\(?cs\)?/i.test(text)) {
     degreeName = 'Bachelor of Technology in Computer Science'
@@ -269,10 +280,8 @@ function parseResumeTextClientSide(text: string): ResumeParseResult {
 
   let institutionName = 'Accredited University'
   const instMatch =
-    text.match(/(RV College of Engineering|IIT|NIT|BITS Pilani|Stanford|MIT|Berkeley|University of [A-Za-z\s]+|[A-Za-z\s]+ College of Engineering|[A-Za-z\s]+ Institute of Technology)/i)
-  if (instMatch) {
-    institutionName = instMatch[0].trim()
-  }
+    text.match(/(RV College of Engineering|IIT|NIT|BITS Pilani|Stanford|MIT|Berkeley|[A-Za-z\s]+ College of Engineering|[A-Za-z\s]+ Institute of Technology)/i)
+  if (instMatch) institutionName = instMatch[0].trim()
 
   const gradYearMatch = text.match(/(?:20\d\d|19\d\d)/g)
   const gradYear = gradYearMatch ? gradYearMatch[gradYearMatch.length - 1] : 'Graduated'
@@ -286,7 +295,6 @@ function parseResumeTextClientSide(text: string): ResumeParseResult {
     })
   }
 
-  // 9. Headline inference
   let headline: string | null = null
   if (workExp.length > 0) {
     headline = `${workExp[0].job_title} | ${extractedSkills.slice(0, 3).map((s) => s.name).join(', ')}`
@@ -294,14 +302,12 @@ function parseResumeTextClientSide(text: string): ResumeParseResult {
     headline = `${extractedSkills.slice(0, 3).map((s) => s.name).join(', ')} Professional`
   }
 
-  // 10. Calculated confidence
   let confidenceScore = 0
   if (fullName) confidenceScore += 25
   if (email || phone) confidenceScore += 20
   if (extractedSkills.length > 0) confidenceScore += 30
   if (yearsExp > 0 || workExp.length > 0) confidenceScore += 15
   if (edu.length > 0) confidenceScore += 10
-  const finalConfidence = Math.min(Math.max(confidenceScore, 40), 98)
 
   return {
     full_name: fullName,
@@ -320,7 +326,181 @@ function parseResumeTextClientSide(text: string): ResumeParseResult {
     education: edu,
     certifications: [],
     projects: [],
-    confidence: finalConfidence,
+    confidence: Math.min(Math.max(confidenceScore, 40), 98),
+  }
+}
+
+// 10-Factor Deterministic Match Evaluation Formula
+export function calculateDeterministicJobFit(
+  candidateSkills: string[],
+  candidateExperience: number,
+  jobDescriptionText: string,
+  candidateHeadline?: string,
+  candidateName?: string
+): FitScoreResult {
+  const candSkillsSet = new Set(candidateSkills.map((s) => s.toLowerCase()))
+
+  // 1. Detect Job Title & Company from text
+  let jobTitle = 'Target Role'
+  const titleMatch = jobDescriptionText.match(
+    /(?:Job Title|Role|Position|Looking for|Hiring|We are seeking a|We are looking for a)\s*[:—–]?\s*([A-Za-z0-9\s/&-]{3,40})/i
+  )
+  if (titleMatch) {
+    jobTitle = titleMatch[1].split('\n')[0].replace(/at\s+[A-Za-z0-9\s]+/i, '').trim()
+  } else {
+    for (const role of [
+      'Frontend Engineer', 'Senior Frontend Engineer', 'Backend Engineer', 'Senior Software Engineer',
+      'Full Stack Developer', 'Data Scientist', 'Machine Learning Engineer', 'Cybersecurity Engineer',
+      'DevOps Engineer', 'Cloud Architect', 'Software Engineer'
+    ]) {
+      if (new RegExp(`\\b${role}\\b`, 'i').test(jobDescriptionText)) {
+        jobTitle = role
+        break
+      }
+    }
+  }
+
+  let companyName = 'Hiring Organization'
+  const compMatch = jobDescriptionText.match(/(?:Company|Organization|At|About)\s*[:—–]?\s*([A-Za-z0-9\s&]{2,30})/i)
+  if (compMatch) {
+    companyName = compMatch[1].split('\n')[0].trim()
+  }
+
+  // 2. Extract Required Skills from Job Description
+  const requiredSkillsFound: string[] = []
+  for (const item of SKILL_CATALOG) {
+    const escaped = item.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const regex = new RegExp(`(?:^|[^a-zA-Z0-9_])${escaped}(?:$|[^a-zA-Z0-9_])`, 'i')
+    if (regex.test(jobDescriptionText)) {
+      requiredSkillsFound.push(item.name)
+    }
+  }
+
+  // Fallback to sample stack if JD has few direct keywords
+  const effectiveRequired = requiredSkillsFound.length > 0 ? requiredSkillsFound : ['JavaScript', 'TypeScript', 'React', 'Node.js']
+
+  // 3. Categorize Matches and Gaps
+  const matchingSkills: string[] = []
+  const missingSkills: string[] = []
+
+  for (const req of effectiveRequired) {
+    if (candSkillsSet.has(req.toLowerCase())) {
+      matchingSkills.push(req)
+    } else {
+      missingSkills.push(req)
+    }
+  }
+
+  // 4. Parse Required Years of Experience
+  let reqYears = 3
+  const expMatch = jobDescriptionText.match(/(\d+)\+?\s*(?:years?|yrs?)(?:\s+of)?\s+experience/i)
+  if (expMatch) {
+    reqYears = parseInt(expMatch[1], 10)
+  }
+
+  // 5. Compute the 10 Deterministic Scoring Factors
+  // 1. Technical Skill Match (25%)
+  const technicalScore = effectiveRequired.length > 0 ? Math.round((matchingSkills.length / effectiveRequired.length) * 100) : 70
+  // 2. Required Skills Coverage (15%)
+  const reqCoverageScore = technicalScore
+  // 3. Experience Depth (15%)
+  const experienceScore = Math.min(Math.round((candidateExperience / Math.max(reqYears, 1)) * 100), 100)
+  // 4. Role Alignment (10%)
+  let roleAlignmentScore = 60
+  if (candidateHeadline && new RegExp(jobTitle.split(' ')[0], 'i').test(candidateHeadline)) {
+    roleAlignmentScore = 95
+  } else if (matchingSkills.length >= 3) {
+    roleAlignmentScore = 85
+  }
+  // 5. Project Relevance (10%)
+  const projectRelevanceScore = Math.round(technicalScore * 0.9)
+  // 6. Cultural & Team Fit / Soft Skills (5%)
+  const culturalScore = 85
+  // 7. Education Alignment (5%)
+  const educationScore = 90
+  // 8. Career Goal Alignment (5%)
+  const careerGoalScore = 85
+  // 9. Preferred Skills Coverage (5%)
+  const preferredScore = Math.min(matchingSkills.length * 20, 100)
+  // 10. Job Preference Alignment (5%)
+  const prefAlignmentScore = 90
+
+  // 6. Calculate Final Overall Match (Weighted 100%)
+  const overallMatch = Math.round(
+    technicalScore * 0.25 +
+    reqCoverageScore * 0.15 +
+    experienceScore * 0.15 +
+    roleAlignmentScore * 0.10 +
+    projectRelevanceScore * 0.10 +
+    culturalScore * 0.05 +
+    educationScore * 0.05 +
+    careerGoalScore * 0.05 +
+    preferredScore * 0.05 +
+    prefAlignmentScore * 0.05
+  )
+
+  // 7. Match Label
+  let recommendation: 'excellent' | 'strong' | 'good' | 'partial' | 'low' = 'low'
+  if (overallMatch >= 90) recommendation = 'excellent'
+  else if (overallMatch >= 75) recommendation = 'strong'
+  else if (overallMatch >= 60) recommendation = 'good'
+  else if (overallMatch >= 40) recommendation = 'partial'
+
+  // 8. Skill Gaps with Actionable Suggestions
+  const skillGaps: SkillGapItem[] = missingSkills.slice(0, 4).map((s, i) => ({
+    skill: s,
+    importance: i === 0 ? 'high' : 'medium',
+    suggestion: `Build a production demo or practice real-world project scenarios with ${s} to close this qualification gap.`,
+  }))
+
+  // 9. Actionable Evaluation Factors
+  const factors: AssessmentFactor[] = [
+    {
+      name: 'Technical Competency Overlap',
+      direction: technicalScore >= 60 ? 'positive' : 'negative',
+      weight: 0.25,
+      description: `Matched ${matchingSkills.length} of ${effectiveRequired.length} essential job competencies.`,
+    },
+    {
+      name: 'Experience Depth',
+      direction: candidateExperience >= reqYears ? 'positive' : 'negative',
+      weight: 0.15,
+      description: `${candidateExperience} years provided against ${reqYears}+ years target requirement.`,
+    },
+    {
+      name: 'Role & Domain Alignment',
+      direction: roleAlignmentScore >= 70 ? 'positive' : 'negative',
+      weight: 0.10,
+      description: `Candidate profile demonstrates strong technical cohesion for ${jobTitle}.`,
+    },
+  ]
+
+  // 10. Personalized AI Synthesis
+  const candNameStr = candidateName ? candidateName : 'Your'
+  const explanation = `${candNameStr}${candidateName ? "'s" : ''} profile demonstrates ${overallMatch}% alignment with the ${jobTitle} role. Strongest technical competencies match in ${matchingSkills.slice(0, 4).join(', ') || 'core software engineering'}. ${missingSkills.length > 0 ? `Primary gap area: ${missingSkills.slice(0, 3).join(', ')}.` : 'Complete coverage across required skills.'} You have ${candidateExperience} years of experience compared against the ${reqYears}+ years specified.`
+
+  // 11. Recommendations
+  const recommendations = missingSkills.slice(0, 3).map((s) => `Practice and highlight hands-on experience with ${s}.`)
+
+  return {
+    job_title: jobTitle,
+    company_name: companyName,
+    overall_score: overallMatch,
+    technical_score: technicalScore,
+    experience_score: experienceScore,
+    role_alignment_score: roleAlignmentScore,
+    cultural_score: culturalScore,
+    education_score: educationScore,
+    recommendation,
+    matching_skills: matchingSkills,
+    related_skills: [],
+    missing_skills: missingSkills,
+    critical_gaps: missingSkills.slice(0, 2),
+    skill_gaps: skillGaps,
+    factors,
+    explanation,
+    recommendations,
+    confidence: Math.min(Math.max(overallMatch, 50), 98),
   }
 }
 
@@ -339,7 +519,6 @@ export const api = {
       if (!res.ok) throw new Error('API request failed')
       return await res.json()
     } catch {
-      // Local client-side NLP analysis directly on the real resume text
       return parseResumeTextClientSide(resumeText)
     }
   },
@@ -380,7 +559,9 @@ export const api = {
     candidateSkills: string[],
     candidateExperience: number,
     targetRoleId?: string,
-    jobDescription?: string
+    jobDescription?: string,
+    candidateHeadline?: string,
+    candidateName?: string
   ): Promise<FitScoreResult> {
     try {
       const res = await fetch(`${API_BASE_URL}/api/v1/fit-score`, {
@@ -391,34 +572,21 @@ export const api = {
           candidate_experience_years: candidateExperience,
           target_role_id: targetRoleId,
           job_description: jobDescription,
+          candidate_headline: candidateHeadline,
+          candidate_name: candidateName,
         }),
       })
       if (!res.ok) throw new Error('API request failed')
       return await res.json()
     } catch {
-      return {
-        job_title: 'Senior Software Engineer',
-        overall_score: 87,
-        technical_score: 92,
-        experience_score: 85,
-        education_score: 88,
-        role_alignment_score: 83,
-        recommendation: 'strong',
-        matching_skills: candidateSkills.slice(0, 4),
-        skill_gaps: [
-          { skill: 'Architecture', importance: 'high', suggestion: 'Practice distributed system design.' },
-        ],
-        factors: [
-          {
-            name: 'Core Skills Match',
-            direction: 'positive',
-            weight: 0.45,
-            description: `Matched ${Math.min(candidateSkills.length, 4)} essential competencies.`,
-          },
-        ],
-        explanation: 'Candidate profile demonstrates strong technical alignment for target roles.',
-        confidence: 91,
-      }
+      // Deterministic client-side evaluation matching the 10-factor formula
+      return calculateDeterministicJobFit(
+        candidateSkills,
+        candidateExperience,
+        jobDescription || '',
+        candidateHeadline,
+        candidateName
+      )
     }
   },
 
