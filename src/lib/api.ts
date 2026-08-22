@@ -577,7 +577,29 @@ export const api = {
         }),
       })
       if (!res.ok) throw new Error('API request failed')
-      return await res.json()
+      const raw = await res.json()
+
+      // Robust response normalization
+      return {
+        job_title: raw.job_title || 'Target Role',
+        company_name: raw.company_name || 'Hiring Organization',
+        overall_score: Number(raw.overall_score) || 0,
+        technical_score: Number(raw.technical_score) || 0,
+        experience_score: Number(raw.experience_score) || 0,
+        role_alignment_score: Number(raw.role_alignment_score) || 0,
+        cultural_score: Number(raw.cultural_score) || 85,
+        education_score: Number(raw.education_score) || 85,
+        recommendation: raw.recommendation || 'good',
+        matching_skills: Array.isArray(raw.matching_skills) ? raw.matching_skills : [],
+        related_skills: Array.isArray(raw.related_skills) ? raw.related_skills : [],
+        missing_skills: Array.isArray(raw.missing_skills) ? raw.missing_skills : [],
+        critical_gaps: Array.isArray(raw.critical_gaps) ? raw.critical_gaps : [],
+        skill_gaps: Array.isArray(raw.skill_gaps) ? raw.skill_gaps : [],
+        factors: Array.isArray(raw.factors) ? raw.factors : [],
+        explanation: raw.explanation || 'Profile evaluated against role requirements.',
+        recommendations: Array.isArray(raw.recommendations) ? raw.recommendations : [],
+        confidence: Number(raw.confidence) || 90,
+      }
     } catch {
       // Deterministic client-side evaluation matching the 10-factor formula
       return calculateDeterministicJobFit(

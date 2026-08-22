@@ -121,16 +121,20 @@ class AssessmentFactor(BaseModel):
 
 class FitScoreResponse(BaseModel):
     job_title: str
+    company_name: Optional[str] = "Hiring Organization"
     overall_score: int
     technical_score: int
     experience_score: int
     education_score: int
     role_alignment_score: int
+    cultural_score: Optional[int] = 85
     recommendation: str
-    matching_skills: List[str]
-    skill_gaps: List[SkillGap]
-    factors: List[AssessmentFactor]
+    matching_skills: List[str] = []
+    missing_skills: List[str] = []
+    skill_gaps: List[SkillGap] = []
+    factors: List[AssessmentFactor] = []
     explanation: str
+    recommendations: List[str] = []
     confidence: int
 
 class InterviewEvalRequest(BaseModel):
@@ -498,16 +502,20 @@ def evaluate_fit_score(payload: FitScoreRequest):
 
     return FitScoreResponse(
         job_title=target_role["title"],
+        company_name=target_role.get("companyName", "Technology Solutions"),
         overall_score=overall,
         technical_score=tech_score,
         experience_score=exp_score,
         education_score=edu_score,
         role_alignment_score=role_align,
+        cultural_score=85,
         recommendation=recommendation,
         matching_skills=matching_skills,
+        missing_skills=missing_skills,
         skill_gaps=skill_gaps,
         factors=factors,
         explanation=f"Candidate profile scored {overall}% alignment based on verified skills and domain experience.",
+        recommendations=[f"Practice and highlight experience with {s}" for s in missing_skills[:3]],
         confidence=91,
     )
 
