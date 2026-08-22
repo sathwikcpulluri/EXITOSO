@@ -17,6 +17,7 @@ const CandidateOnboarding = lazy(() => import('@/pages/candidate/OnboardingPage'
 const JobFitPage = lazy(() => import('@/pages/candidate/JobFitPage'))
 const FitHistoryPage = lazy(() => import('@/pages/candidate/FitHistoryPage'))
 const JobRecommendationsPage = lazy(() => import('@/pages/candidate/JobRecommendationsPage'))
+const HiringProbabilityPage = lazy(() => import('@/pages/candidate/HiringProbabilityPage'))
 const SettingsPage = lazy(() => import('@/pages/candidate/SettingsPage'))
 
 // Lazy load auth pages
@@ -64,6 +65,7 @@ export const router = createBrowserRouter([
       { path: 'profile', element: <LazyWrapper><CandidateProfile /></LazyWrapper> },
       { path: 'onboarding', element: <LazyWrapper><CandidateOnboarding /></LazyWrapper> },
       { path: 'job-fit', element: <LazyWrapper><JobFitPage /></LazyWrapper> },
+      { path: 'hiring-probability', element: <LazyWrapper><HiringProbabilityPage /></LazyWrapper> },
       { path: 'fit-history', element: <LazyWrapper><FitHistoryPage /></LazyWrapper> },
       { path: 'recommendations', element: <LazyWrapper><JobRecommendationsPage /></LazyWrapper> },
       { path: 'settings', element: <LazyWrapper><SettingsPage /></LazyWrapper> },

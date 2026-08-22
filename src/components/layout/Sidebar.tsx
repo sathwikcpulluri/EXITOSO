@@ -12,6 +12,7 @@ import {
   LogOut,
   ChevronLeft,
   History,
+  Sparkles,
   X,
 } from 'lucide-react'
 
@@ -24,6 +25,7 @@ interface NavItem {
 const candidateNav: NavItem[] = [
   { label: 'Dashboard', href: '/candidate/dashboard', icon: <LayoutDashboard className="h-5 w-5" /> },
   { label: 'AI Role Predictor', href: '/candidate/job-fit', icon: <Target className="h-5 w-5" /> },
+  { label: 'Hiring Probability', href: '/candidate/hiring-probability', icon: <Sparkles className="h-5 w-5" /> },
   { label: 'Recommendations', href: '/candidate/recommendations', icon: <Briefcase className="h-5 w-5" /> },
   { label: 'Prediction History', href: '/candidate/fit-history', icon: <History className="h-5 w-5" /> },
   { label: 'Profile & Skills', href: '/candidate/profile', icon: <User className="h-5 w-5" /> },
