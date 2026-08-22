@@ -30,6 +30,16 @@ export const router = createBrowserRouter([
     element: <LazyWrapper><LandingPage /></LazyWrapper>,
   },
 
+  // Direct alias redirects to candidate routes (which are protected)
+  {
+    path: '/onboarding',
+    element: <Navigate to="/candidate/onboarding" replace />,
+  },
+  {
+    path: '/dashboard',
+    element: <Navigate to="/candidate/dashboard" replace />,
+  },
+
   // Auth routes
   {
     path: '/auth',
@@ -40,7 +50,7 @@ export const router = createBrowserRouter([
     ],
   },
 
-  // Candidate routes
+  // Candidate routes (Protected by Supabase Auth)
   {
     path: '/candidate',
     element: (

@@ -2,39 +2,194 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { useAuthStore } from '@/store/authStore'
-import { ArrowRight, Lock, Mail, User, Sparkles, ShieldCheck } from 'lucide-react'
+import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import {
+  validateFullName,
+  validateGmail,
+  validatePassword,
+  normalizeEmail,
+} from '@/lib/validators'
+import {
+  ArrowRight,
+  Lock,
+  Mail,
+  User,
+  Sparkles,
+  ShieldCheck,
+  AlertCircle,
+  CheckCircle2,
+} from 'lucide-react'
 
 export default function RegisterPage() {
   const navigate = useNavigate()
   const { setUser } = useAuthStore()
+
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+
+  // Field inline errors
+  const [nameError, setNameError] = useState('')
+  const [emailError, setEmailError] = useState('')
+  const [passwordError, setPasswordError] = useState('')
+
+  // Form level states
+  const [generalError, setGeneralError] = useState('')
+  const [successMessage, setSuccessMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!fullName.trim() || !email.trim() || !password.trim()) return
-
-    setIsLoading(true)
-    setTimeout(() => {
-      setUser({
-        id: `user-${Date.now()}`,
-        email: email.trim(),
-        fullName: fullName.trim(),
-        role: 'candidate',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      })
-      setIsLoading(false)
-      navigate('/candidate/onboarding')
-    }, 500)
+  // Real-time field validation handlers
+  const handleNameChange = (val: string) => {
+    setFullName(val)
+    if (nameError) {
+      const res = validateFullName(val)
+      setNameError(res.isValid ? '' : res.error || '')
+    }
   }
 
+  const handleEmailChange = (val: string) => {
+    setEmail(val)
+    if (emailError) {
+      const res = validateGmail(val)
+      setEmailError(res.isValid ? '' : res.error || '')
+    }
+  }
+
+  const handlePasswordChange = (val: string) => {
+    setPassword(val)
+    if (passwordError) {
+      const res = validatePassword(val)
+      setPasswordError(res.isValid ? '' : res.error || '')
+    }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setGeneralError('')
+    setSuccessMessage('')
+
+    // 1. FRONTEND VALIDATIONS (Strict checks)
+    const nameVal = validateFullName(fullName)
+    const emailVal = validateGmail(email)
+    const passVal = validatePassword(password)
+
+    setNameError(nameVal.isValid ? '' : nameVal.error || '')
+    setEmailError(emailVal.isValid ? '' : emailVal.error || '')
+    setPasswordError(passVal.isValid ? '' : passVal.error || '')
+
+    // Block submission if any validation fails
+    if (!nameVal.isValid || !emailVal.isValid || !passVal.isValid) {
+      return
+    }
+
+    const cleanEmail = normalizeEmail(email)
+    const cleanName = fullName.trim()
+
+    // 2. CHECK SUPABASE CONFIGURATION
+    if (!isSupabaseConfigured) {
+      setGeneralError(
+        'Supabase backend credentials (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY) are not configured in your .env file. Please add your credentials to connect authentication.'
+      )
+      return
+    }
+
+    // 3. EXECUTE REAL SUPABASE AUTH SIGNUP
+    setIsLoading(true)
+
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password: password,
+        options: {
+          data: {
+            full_name: cleanName,
+            role: 'candidate',
+          },
+        },
+      })
+
+      // 4. HANDLE SUPABASE ERRORS
+      if (error) {
+        setIsLoading(false)
+        console.error('[Supabase Auth Error]', error.message)
+
+        const msg = error.message.toLowerCase()
+        if (msg.includes('already registered') || msg.includes('user already exists')) {
+          setGeneralError('An account with this email already exists. Please sign in.')
+        } else if (msg.includes('password') && (msg.includes('weak') || msg.includes('least'))) {
+          setPasswordError('Password must be at least 8 characters.')
+        } else if (msg.includes('rate limit') || msg.includes('too many')) {
+          setGeneralError('Too many signup attempts. Please wait a few moments and try again.')
+        } else if (msg.includes('network') || msg.includes('fetch')) {
+          setGeneralError('Unable to connect. Please check your internet connection and try again.')
+        } else {
+          setGeneralError(error.message || 'Unable to create your account. Please try again.')
+        }
+        return
+      }
+
+      // Check if user was returned
+      if (!data?.user) {
+        setIsLoading(false)
+        setGeneralError('Unable to create your account. Please try again.')
+        return
+      }
+
+      const sbUser = data.user
+
+      // 5. DATABASE PROFILE CREATION
+      const { error: profileError } = await supabase.from('profiles').upsert({
+        id: sbUser.id,
+        email: sbUser.email || cleanEmail,
+        full_name: cleanName,
+        role: 'candidate',
+        created_at: new Date().toISOString(),
+      })
+
+      if (profileError) {
+        console.error('[Supabase Profile Creation Error]', profileError.message)
+        setIsLoading(false)
+        setGeneralError('Account was created, but profile setup failed. Please try again.')
+        return
+      }
+
+      // 6. CHECK EMAIL VERIFICATION CONFIGURATION
+      // If Supabase has email confirmation enabled, session is null until verified
+      if (!data.session) {
+        setIsLoading(false)
+        setSuccessMessage('Account created. Please check your email to verify your account.')
+        return
+      }
+
+      // 7. SUCCESSFUL SIGNUP & ACTIVE SESSION -> Onboard
+      setUser({
+        id: sbUser.id,
+        email: sbUser.email || cleanEmail,
+        fullName: cleanName,
+        role: 'candidate',
+        createdAt: sbUser.created_at || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+
+      setIsLoading(false)
+      navigate('/candidate/onboarding')
+    } catch (err: any) {
+      setIsLoading(false)
+      console.error('[CareerAI Signup Exception]', err)
+      setGeneralError('Unable to connect. Please check your internet connection and try again.')
+    }
+  }
+
+  // Auto-fill helper populates inputs only (does NOT auto-submit or bypass auth)
   const handleFillDemo = () => {
     setFullName('Sarah Connor')
-    setEmail('sarah.connor@example.com')
+    setEmail('sarah.connor@gmail.com')
     setPassword('SecurePass123!')
+    setNameError('')
+    setEmailError('')
+    setPasswordError('')
+    setGeneralError('')
+    setSuccessMessage('')
   }
 
   return (
@@ -46,7 +201,27 @@ export default function RegisterPage() {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4 pt-2">
+      {/* General Error Banner */}
+      {generalError && (
+        <div className="p-3.5 rounded-xl bg-rose-950/50 border border-rose-500/40 text-xs text-rose-200 flex items-start gap-2.5 animate-fade-in">
+          <AlertCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+          <span className="leading-relaxed">{generalError}</span>
+        </div>
+      )}
+
+      {/* Email Verification Success Banner */}
+      {successMessage && (
+        <div className="p-4 rounded-xl bg-emerald-950/50 border border-emerald-500/40 text-xs text-emerald-200 flex items-start gap-2.5 animate-fade-in">
+          <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-bold text-white text-sm">Verification Email Sent</p>
+            <p className="leading-relaxed">{successMessage}</p>
+          </div>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} noValidate className="space-y-4 pt-1">
+        {/* Full Name */}
         <div>
           <label className="block text-xs font-semibold text-neutral-300 uppercase tracking-wider mb-1.5">
             Full Name
@@ -57,13 +232,27 @@ export default function RegisterPage() {
               type="text"
               placeholder="e.g. Sarah Connor"
               value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white placeholder-neutral-500 text-sm focus:border-rose-500 focus:bg-white/[0.07] transition-all outline-none"
-              required
+              disabled={isLoading}
+              onChange={(e) => handleNameChange(e.target.value)}
+              onBlur={() => {
+                const res = validateFullName(fullName)
+                setNameError(res.isValid ? '' : res.error || '')
+              }}
+              className={`w-full pl-10 pr-4 py-3 rounded-xl bg-white/[0.04] text-white placeholder-neutral-500 text-sm transition-all outline-none border ${
+                nameError
+                  ? 'border-rose-500 focus:border-rose-500 bg-rose-950/10'
+                  : 'border-white/10 focus:border-rose-500 focus:bg-white/[0.07]'
+              }`}
             />
           </div>
+          {nameError && (
+            <p className="text-xs text-rose-400 mt-1.5 flex items-center gap-1">
+              <AlertCircle className="h-3 w-3" /> {nameError}
+            </p>
+          )}
         </div>
 
+        {/* Email Address */}
         <div>
           <label className="block text-xs font-semibold text-neutral-300 uppercase tracking-wider mb-1.5">
             Email Address
@@ -72,15 +261,29 @@ export default function RegisterPage() {
             <Mail className="h-4 w-4 text-neutral-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="email"
-              placeholder="name@company.com"
+              placeholder="name@gmail.com"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white placeholder-neutral-500 text-sm focus:border-rose-500 focus:bg-white/[0.07] transition-all outline-none"
-              required
+              disabled={isLoading}
+              onChange={(e) => handleEmailChange(e.target.value)}
+              onBlur={() => {
+                const res = validateGmail(email)
+                setEmailError(res.isValid ? '' : res.error || '')
+              }}
+              className={`w-full pl-10 pr-4 py-3 rounded-xl bg-white/[0.04] text-white placeholder-neutral-500 text-sm transition-all outline-none border ${
+                emailError
+                  ? 'border-rose-500 focus:border-rose-500 bg-rose-950/10'
+                  : 'border-white/10 focus:border-rose-500 focus:bg-white/[0.07]'
+              }`}
             />
           </div>
+          {emailError && (
+            <p className="text-xs text-rose-400 mt-1.5 flex items-center gap-1">
+              <AlertCircle className="h-3 w-3" /> {emailError}
+            </p>
+          )}
         </div>
 
+        {/* Password */}
         <div>
           <label className="block text-xs font-semibold text-neutral-300 uppercase tracking-wider mb-1.5">
             Password
@@ -89,13 +292,26 @@ export default function RegisterPage() {
             <Lock className="h-4 w-4 text-neutral-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="password"
-              placeholder="Create a secure password"
+              placeholder="Minimum 8 characters"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white placeholder-neutral-500 text-sm focus:border-rose-500 focus:bg-white/[0.07] transition-all outline-none"
-              required
+              disabled={isLoading}
+              onChange={(e) => handlePasswordChange(e.target.value)}
+              onBlur={() => {
+                const res = validatePassword(password)
+                setPasswordError(res.isValid ? '' : res.error || '')
+              }}
+              className={`w-full pl-10 pr-4 py-3 rounded-xl bg-white/[0.04] text-white placeholder-neutral-500 text-sm transition-all outline-none border ${
+                passwordError
+                  ? 'border-rose-500 focus:border-rose-500 bg-rose-950/10'
+                  : 'border-white/10 focus:border-rose-500 focus:bg-white/[0.07]'
+              }`}
             />
           </div>
+          {passwordError && (
+            <p className="text-xs text-rose-400 mt-1.5 flex items-center gap-1">
+              <AlertCircle className="h-3 w-3" /> {passwordError}
+            </p>
+          )}
         </div>
 
         <div className="flex items-center gap-2 text-xs text-neutral-400 pt-1">
@@ -105,10 +321,10 @@ export default function RegisterPage() {
 
         <Button
           type="submit"
-          disabled={isLoading || !fullName.trim() || !email.trim() || !password.trim()}
+          disabled={isLoading}
           className="w-full py-3.5 gap-2 mt-4 text-sm shadow-[0_0_24px_rgba(255,0,94,0.45)]"
         >
-          {isLoading ? 'Synthesizing...' : 'Create Account & Onboard'}
+          {isLoading ? 'Creating Account...' : 'Create Account & Onboard'}
           <ArrowRight className="h-4 w-4" />
         </Button>
       </form>

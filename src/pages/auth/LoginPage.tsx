@@ -2,40 +2,113 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { useAuthStore } from '@/store/authStore'
-import { ArrowRight, Lock, Mail, Sparkles } from 'lucide-react'
+import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import {
+  validateGmail,
+  validatePassword,
+  normalizeEmail,
+} from '@/lib/validators'
+import { ArrowRight, Lock, Mail, Sparkles, AlertCircle } from 'lucide-react'
 
 export default function LoginPage() {
   const navigate = useNavigate()
   const { setUser } = useAuthStore()
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+
+  const [emailError, setEmailError] = useState('')
+  const [passwordError, setPasswordError] = useState('')
+  const [generalError, setGeneralError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!email.trim() || !password.trim()) return
+    setGeneralError('')
+
+    const emailVal = validateGmail(email)
+    const passVal = validatePassword(password)
+
+    setEmailError(emailVal.isValid ? '' : emailVal.error || '')
+    setPasswordError(passVal.isValid ? '' : passVal.error || '')
+
+    if (!emailVal.isValid || !passVal.isValid) {
+      return
+    }
+
+    const cleanEmail = normalizeEmail(email)
+
+    if (!isSupabaseConfigured) {
+      setGeneralError(
+        'Supabase credentials are not configured in .env. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.'
+      )
+      return
+    }
 
     setIsLoading(true)
-    setTimeout(() => {
-      const namePart = email.split('@')[0].replace(/[._]/g, ' ')
-      const formattedName = namePart.charAt(0).toUpperCase() + namePart.slice(1)
+
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password: password,
+      })
+
+      if (error) {
+        setIsLoading(false)
+        console.error('[Supabase SignIn Error]', error.message)
+        const msg = error.message.toLowerCase()
+        if (msg.includes('invalid login credentials') || msg.includes('invalid credentials')) {
+          setGeneralError('Invalid email or password. Please check your credentials and try again.')
+        } else if (msg.includes('email not confirmed')) {
+          setGeneralError('Please check your inbox and verify your email address before signing in.')
+        } else if (msg.includes('network') || msg.includes('fetch')) {
+          setGeneralError('Unable to connect. Please check your internet connection and try again.')
+        } else {
+          setGeneralError(error.message || 'Unable to sign in. Please try again.')
+        }
+        return
+      }
+
+      if (!data?.user) {
+        setIsLoading(false)
+        setGeneralError('Unable to sign in. Please try again.')
+        return
+      }
+
+      const sbUser = data.user
+
+      // Fetch profile
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', sbUser.id)
+        .single()
 
       setUser({
-        id: `user-${Date.now()}`,
-        email: email.trim(),
-        fullName: formattedName || 'Candidate',
-        role: 'candidate',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        id: sbUser.id,
+        email: sbUser.email || cleanEmail,
+        fullName: profile?.full_name || sbUser.user_metadata?.full_name || 'Candidate',
+        role: profile?.role || sbUser.user_metadata?.role || 'candidate',
+        avatarUrl: profile?.avatar_url,
+        createdAt: profile?.created_at || sbUser.created_at || new Date().toISOString(),
+        updatedAt: profile?.updated_at || new Date().toISOString(),
       })
+
       setIsLoading(false)
       navigate('/candidate/dashboard')
-    }, 500)
+    } catch (err: any) {
+      setIsLoading(false)
+      console.error('[CareerAI SignIn Exception]', err)
+      setGeneralError('Unable to connect. Please check your internet connection and try again.')
+    }
   }
 
   const handleFillDemo = () => {
-    setEmail('sarah.connor@example.com')
+    setEmail('sarah.connor@gmail.com')
     setPassword('SecurePass123!')
+    setEmailError('')
+    setPasswordError('')
+    setGeneralError('')
   }
 
   return (
@@ -47,7 +120,14 @@ export default function LoginPage() {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4 pt-2">
+      {generalError && (
+        <div className="p-3.5 rounded-xl bg-rose-950/50 border border-rose-500/40 text-xs text-rose-200 flex items-start gap-2.5 animate-fade-in">
+          <AlertCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+          <span className="leading-relaxed">{generalError}</span>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} noValidate className="space-y-4 pt-1">
         <div>
           <label className="block text-xs font-semibold text-neutral-300 uppercase tracking-wider mb-1.5">
             Email Address
@@ -56,13 +136,25 @@ export default function LoginPage() {
             <Mail className="h-4 w-4 text-neutral-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="email"
-              placeholder="name@company.com"
+              placeholder="name@gmail.com"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white placeholder-neutral-500 text-sm focus:border-rose-500 focus:bg-white/[0.07] transition-all outline-none"
-              required
+              disabled={isLoading}
+              onChange={(e) => {
+                setEmail(e.target.value)
+                if (emailError) setEmailError('')
+              }}
+              className={`w-full pl-10 pr-4 py-3 rounded-xl bg-white/[0.04] text-white placeholder-neutral-500 text-sm transition-all outline-none border ${
+                emailError
+                  ? 'border-rose-500 focus:border-rose-500 bg-rose-950/10'
+                  : 'border-white/10 focus:border-rose-500 focus:bg-white/[0.07]'
+              }`}
             />
           </div>
+          {emailError && (
+            <p className="text-xs text-rose-400 mt-1.5 flex items-center gap-1">
+              <AlertCircle className="h-3 w-3" /> {emailError}
+            </p>
+          )}
         </div>
 
         <div>
@@ -75,30 +167,28 @@ export default function LoginPage() {
               type="password"
               placeholder="Enter your password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white placeholder-neutral-500 text-sm focus:border-rose-500 focus:bg-white/[0.07] transition-all outline-none"
-              required
+              disabled={isLoading}
+              onChange={(e) => {
+                setPassword(e.target.value)
+                if (passwordError) setPasswordError('')
+              }}
+              className={`w-full pl-10 pr-4 py-3 rounded-xl bg-white/[0.04] text-white placeholder-neutral-500 text-sm transition-all outline-none border ${
+                passwordError
+                  ? 'border-rose-500 focus:border-rose-500 bg-rose-950/10'
+                  : 'border-white/10 focus:border-rose-500 focus:bg-white/[0.07]'
+              }`}
             />
           </div>
-        </div>
-
-        <div className="flex items-center justify-between text-xs text-neutral-400 pt-1">
-          <label className="flex items-center gap-2 cursor-pointer text-neutral-300">
-            <input
-              type="checkbox"
-              defaultChecked
-              className="rounded border-white/20 bg-neutral-800 text-rose-500 focus:ring-rose-500"
-            />
-            Remember me
-          </label>
-          <a href="#" className="text-orange-400 hover:underline font-medium">
-            Forgot password?
-          </a>
+          {passwordError && (
+            <p className="text-xs text-rose-400 mt-1.5 flex items-center gap-1">
+              <AlertCircle className="h-3 w-3" /> {passwordError}
+            </p>
+          )}
         </div>
 
         <Button
           type="submit"
-          disabled={isLoading || !email.trim() || !password.trim()}
+          disabled={isLoading}
           className="w-full py-3.5 gap-2 mt-4 text-sm shadow-[0_0_24px_rgba(255,0,94,0.45)]"
         >
           {isLoading ? 'Signing in...' : 'Sign In'}

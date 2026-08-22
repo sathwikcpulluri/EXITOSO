@@ -31,7 +31,7 @@ const candidateNav: NavItem[] = [
 
 export function Sidebar() {
   const location = useLocation()
-  const { user } = useAuthStore()
+  const { user, signOut } = useAuthStore()
   const { sidebarCollapsed, toggleSidebar, sidebarMobileOpen, setMobileSidebarOpen } = useUIStore()
 
   const navItems = candidateNav
@@ -128,7 +128,11 @@ export function Sidebar() {
               </div>
             )}
             {!sidebarCollapsed && (
-              <button className="p-1.5 rounded-lg text-neutral-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer">
+              <button
+                onClick={() => signOut()}
+                title="Sign Out"
+                className="p-1.5 rounded-lg text-neutral-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+              >
                 <LogOut className="h-4 w-4" />
               </button>
             )}
