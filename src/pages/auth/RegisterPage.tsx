@@ -34,16 +34,16 @@ export default function RegisterPage() {
   const [emailError, setEmailError] = useState('')
   const [passwordError, setPasswordError] = useState('')
 
-  // Form level states
+  // Form level states (Never persisted to localStorage/sessionStorage)
   const [generalError, setGeneralError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [cooldownSeconds, setCooldownSeconds] = useState(0)
 
-  // Atomic lock ref to strictly prevent duplicate simultaneous API calls
+  // Atomic lock ref to strictly prevent concurrent duplicate API calls
   const isSubmittingRef = useRef(false)
 
-  // Cooldown countdown timer
+  // Cooldown countdown timer (Only active if an actual 429 response occurred)
   useEffect(() => {
     if (cooldownSeconds <= 0) return
     const timer = setInterval(() => {
@@ -52,9 +52,16 @@ export default function RegisterPage() {
     return () => clearInterval(timer)
   }, [cooldownSeconds])
 
-  // Real-time field validation handlers
+  // Clear stale errors & cooldown when user interacts with inputs
+  const resetStaleErrors = () => {
+    if (generalError) setGeneralError('')
+    if (successMessage) setSuccessMessage('')
+    if (cooldownSeconds > 0) setCooldownSeconds(0)
+  }
+
   const handleNameChange = (val: string) => {
     setFullName(val)
+    resetStaleErrors()
     if (nameError) {
       const res = validateFullName(val)
       setNameError(res.isValid ? '' : res.error || '')
@@ -63,6 +70,7 @@ export default function RegisterPage() {
 
   const handleEmailChange = (val: string) => {
     setEmail(val)
+    resetStaleErrors()
     if (emailError) {
       const res = validateGmail(val)
       setEmailError(res.isValid ? '' : res.error || '')
@@ -71,6 +79,7 @@ export default function RegisterPage() {
 
   const handlePasswordChange = (val: string) => {
     setPassword(val)
+    resetStaleErrors()
     if (passwordError) {
       const res = validatePassword(val)
       setPasswordError(res.isValid ? '' : res.error || '')
@@ -80,7 +89,7 @@ export default function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    // 0. STRICT SINGLE-SUBMISSION LOCK & COOLDOWN CHECK
+    // Block submission if already submitting or if there is an active genuine cooldown
     if (isSubmittingRef.current || isLoading || cooldownSeconds > 0) {
       return
     }
@@ -97,7 +106,7 @@ export default function RegisterPage() {
     setEmailError(emailVal.isValid ? '' : emailVal.error || '')
     setPasswordError(passVal.isValid ? '' : passVal.error || '')
 
-    // Block submission if any validation fails
+    // Block submission immediately if validation fails (No Supabase call)
     if (!nameVal.isValid || !emailVal.isValid || !passVal.isValid) {
       return
     }
@@ -116,6 +125,7 @@ export default function RegisterPage() {
     // 3. EXECUTE REAL SUPABASE AUTH SIGNUP (Single request guaranteed)
     isSubmittingRef.current = true
     setIsLoading(true)
+    console.log('[CareerAI Signup] Request started')
 
     try {
       const { data, error } = await supabase.auth.signUp({
@@ -129,33 +139,42 @@ export default function RegisterPage() {
         },
       })
 
-      // 4. HANDLE SUPABASE AUTH ERRORS
+      // 4. CLASSIFY & HANDLE SUPABASE ERRORS
       if (error) {
         setIsLoading(false)
         isSubmittingRef.current = false
-        console.error('[Supabase Auth Error]', {
-          message: error.message,
+
+        const msg = (error.message || '').toLowerCase()
+        const isRateLimit =
+          error.status === 429 ||
+          (error.name === 'AuthApiError' && (
+            msg.includes('rate limit') ||
+            msg.includes('over_email_send_rate_limit') ||
+            msg.includes('too many requests')
+          ))
+
+        console.log('[CareerAI Signup Response]', {
           status: error.status,
           name: error.name,
+          message: error.message,
+          isRateLimit,
         })
 
-        const msg = error.message.toLowerCase()
-        if (
-          error.status === 429 ||
-          msg.includes('rate limit') ||
-          msg.includes('too many') ||
-          msg.includes('over_email_send_rate_limit') ||
-          msg.includes('security purposes')
-        ) {
+        if (isRateLimit) {
           setGeneralError('Too many signup attempts. Please wait a few minutes before trying again.')
-          setCooldownSeconds(60) // Start a 60s cooldown to prevent repeated rejected requests
-        } else if (msg.includes('already registered') || msg.includes('user already exists') || msg.includes('identity already exists')) {
+          setCooldownSeconds(60) // Only start cooldown on genuine 429
+        } else if (
+          msg.includes('already registered') ||
+          msg.includes('user already exists') ||
+          msg.includes('identity already exists')
+        ) {
           setGeneralError('An account with this email already exists. Please sign in.')
-        } else if (msg.includes('password') && (msg.includes('weak') || msg.includes('least'))) {
+        } else if (msg.includes('password') && (msg.includes('weak') || msg.includes('least') || msg.includes('short'))) {
           setPasswordError('Password must be at least 8 characters.')
-        } else if (msg.includes('network') || msg.includes('fetch')) {
+        } else if (msg.includes('network') || msg.includes('fetch') || msg.includes('failed to fetch')) {
           setGeneralError('Unable to connect. Please check your internet connection and try again.')
         } else {
+          // Show the actual Supabase error message
           setGeneralError(error.message || 'Unable to create your account. Please try again.')
         }
         return
@@ -171,7 +190,7 @@ export default function RegisterPage() {
 
       const sbUser = data.user
 
-      // 5. CHECK EMAIL VERIFICATION STATE (Case B: Session is null because email confirmation is enabled)
+      // 5. CHECK EMAIL VERIFICATION STATE (Session is null when email confirmation is enabled)
       if (!data.session) {
         setIsLoading(false)
         isSubmittingRef.current = false
@@ -179,7 +198,7 @@ export default function RegisterPage() {
         return
       }
 
-      // 6. DATABASE PROFILE CREATION (Case A: Active session present)
+      // 6. DATABASE PROFILE CREATION (When active session is present)
       const { error: profileError } = await supabase.from('profiles').upsert({
         id: sbUser.id,
         email: sbUser.email || cleanEmail,
@@ -193,8 +212,6 @@ export default function RegisterPage() {
         console.error('[Supabase Profile Upsert Error]', {
           code: profileError.code,
           message: profileError.message,
-          details: profileError.details,
-          hint: profileError.hint,
         })
         setIsLoading(false)
         isSubmittingRef.current = false
@@ -242,6 +259,7 @@ export default function RegisterPage() {
     setPasswordError('')
     setGeneralError('')
     setSuccessMessage('')
+    setCooldownSeconds(0)
   }
 
   const isButtonDisabled = isLoading || cooldownSeconds > 0
