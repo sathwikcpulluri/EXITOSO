@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { useAuthStore } from '@/store/authStore'
@@ -18,6 +18,7 @@ import {
   ShieldCheck,
   AlertCircle,
   CheckCircle2,
+  Clock,
 } from 'lucide-react'
 
 export default function RegisterPage() {
@@ -37,6 +38,19 @@ export default function RegisterPage() {
   const [generalError, setGeneralError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [cooldownSeconds, setCooldownSeconds] = useState(0)
+
+  // Atomic lock ref to strictly prevent duplicate simultaneous API calls
+  const isSubmittingRef = useRef(false)
+
+  // Cooldown countdown timer
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return
+    const timer = setInterval(() => {
+      setCooldownSeconds((prev) => (prev > 1 ? prev - 1 : 0))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [cooldownSeconds])
 
   // Real-time field validation handlers
   const handleNameChange = (val: string) => {
@@ -65,6 +79,12 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // 0. STRICT SINGLE-SUBMISSION LOCK & COOLDOWN CHECK
+    if (isSubmittingRef.current || isLoading || cooldownSeconds > 0) {
+      return
+    }
+
     setGeneralError('')
     setSuccessMessage('')
 
@@ -93,7 +113,8 @@ export default function RegisterPage() {
       return
     }
 
-    // 3. EXECUTE REAL SUPABASE AUTH SIGNUP
+    // 3. EXECUTE REAL SUPABASE AUTH SIGNUP (Single request guaranteed)
+    isSubmittingRef.current = true
     setIsLoading(true)
 
     try {
@@ -111,6 +132,7 @@ export default function RegisterPage() {
       // 4. HANDLE SUPABASE AUTH ERRORS
       if (error) {
         setIsLoading(false)
+        isSubmittingRef.current = false
         console.error('[Supabase Auth Error]', {
           message: error.message,
           status: error.status,
@@ -118,12 +140,19 @@ export default function RegisterPage() {
         })
 
         const msg = error.message.toLowerCase()
-        if (msg.includes('already registered') || msg.includes('user already exists') || msg.includes('identity already exists')) {
+        if (
+          error.status === 429 ||
+          msg.includes('rate limit') ||
+          msg.includes('too many') ||
+          msg.includes('over_email_send_rate_limit') ||
+          msg.includes('security purposes')
+        ) {
+          setGeneralError('Too many signup attempts. Please wait a few minutes before trying again.')
+          setCooldownSeconds(60) // Start a 60s cooldown to prevent repeated rejected requests
+        } else if (msg.includes('already registered') || msg.includes('user already exists') || msg.includes('identity already exists')) {
           setGeneralError('An account with this email already exists. Please sign in.')
         } else if (msg.includes('password') && (msg.includes('weak') || msg.includes('least'))) {
           setPasswordError('Password must be at least 8 characters.')
-        } else if (msg.includes('rate limit') || msg.includes('too many')) {
-          setGeneralError('Too many signup attempts. Please wait a few moments and try again.')
         } else if (msg.includes('network') || msg.includes('fetch')) {
           setGeneralError('Unable to connect. Please check your internet connection and try again.')
         } else {
@@ -135,6 +164,7 @@ export default function RegisterPage() {
       // Check if user was returned
       if (!data?.user) {
         setIsLoading(false)
+        isSubmittingRef.current = false
         setGeneralError('Unable to create your account. Please try again.')
         return
       }
@@ -144,6 +174,7 @@ export default function RegisterPage() {
       // 5. CHECK EMAIL VERIFICATION STATE (Case B: Session is null because email confirmation is enabled)
       if (!data.session) {
         setIsLoading(false)
+        isSubmittingRef.current = false
         setSuccessMessage('Account created. Please check your email to verify your account.')
         return
       }
@@ -166,6 +197,7 @@ export default function RegisterPage() {
           hint: profileError.hint,
         })
         setIsLoading(false)
+        isSubmittingRef.current = false
 
         if (profileError.code === '42501') {
           setGeneralError('Your account was created, but your profile could not be initialized. Please check RLS permissions or try again.')
@@ -188,9 +220,11 @@ export default function RegisterPage() {
       })
 
       setIsLoading(false)
+      isSubmittingRef.current = false
       navigate('/candidate/onboarding')
     } catch (err: any) {
       setIsLoading(false)
+      isSubmittingRef.current = false
       console.error('[CareerAI Signup Exception]', {
         message: err?.message || 'Unknown error',
       })
@@ -198,7 +232,7 @@ export default function RegisterPage() {
     }
   }
 
-  // Auto-fill helper populates inputs only (does NOT auto-submit or bypass auth)
+  // Auto-fill helper populates inputs only (does NOT auto-submit or call Supabase)
   const handleFillDemo = () => {
     setFullName('Sarah Connor')
     setEmail('sarah.connor@gmail.com')
@@ -209,6 +243,8 @@ export default function RegisterPage() {
     setGeneralError('')
     setSuccessMessage('')
   }
+
+  const isButtonDisabled = isLoading || cooldownSeconds > 0
 
   return (
     <div className="p-8 sm:p-10 rounded-3xl bg-neutral-900/80 backdrop-blur-2xl border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.6)] space-y-6">
@@ -223,7 +259,14 @@ export default function RegisterPage() {
       {generalError && (
         <div className="p-3.5 rounded-xl bg-rose-950/50 border border-rose-500/40 text-xs text-rose-200 flex items-start gap-2.5 animate-fade-in">
           <AlertCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
-          <span className="leading-relaxed">{generalError}</span>
+          <div className="space-y-1">
+            <span className="leading-relaxed font-medium">{generalError}</span>
+            {cooldownSeconds > 0 && (
+              <p className="text-[11px] text-rose-300/80 flex items-center gap-1">
+                <Clock className="h-3 w-3" /> Retry available in {cooldownSeconds}s
+              </p>
+            )}
+          </div>
         </div>
       )}
 
@@ -250,7 +293,7 @@ export default function RegisterPage() {
               type="text"
               placeholder="e.g. Sarah Connor"
               value={fullName}
-              disabled={isLoading}
+              disabled={isButtonDisabled}
               onChange={(e) => handleNameChange(e.target.value)}
               onBlur={() => {
                 const res = validateFullName(fullName)
@@ -281,7 +324,7 @@ export default function RegisterPage() {
               type="email"
               placeholder="name@gmail.com"
               value={email}
-              disabled={isLoading}
+              disabled={isButtonDisabled}
               onChange={(e) => handleEmailChange(e.target.value)}
               onBlur={() => {
                 const res = validateGmail(email)
@@ -312,7 +355,7 @@ export default function RegisterPage() {
               type="password"
               placeholder="Minimum 8 characters"
               value={password}
-              disabled={isLoading}
+              disabled={isButtonDisabled}
               onChange={(e) => handlePasswordChange(e.target.value)}
               onBlur={() => {
                 const res = validatePassword(password)
@@ -339,11 +382,19 @@ export default function RegisterPage() {
 
         <Button
           type="submit"
-          disabled={isLoading}
-          className="w-full py-3.5 gap-2 mt-4 text-sm shadow-[0_0_24px_rgba(255,0,94,0.45)]"
+          disabled={isButtonDisabled}
+          className="w-full py-3.5 gap-2 mt-4 text-sm shadow-[0_0_24px_rgba(255,0,94,0.45)] disabled:opacity-50"
         >
-          {isLoading ? 'Creating Account...' : 'Create Account & Onboard'}
-          <ArrowRight className="h-4 w-4" />
+          {cooldownSeconds > 0 ? (
+            `Wait ${cooldownSeconds}s before retrying...`
+          ) : isLoading ? (
+            'Creating Account...'
+          ) : (
+            <>
+              Create Account & Onboard
+              <ArrowRight className="h-4 w-4" />
+            </>
+          )}
         </Button>
       </form>
 

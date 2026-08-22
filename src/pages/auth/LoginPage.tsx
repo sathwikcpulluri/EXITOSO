@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { useAuthStore } from '@/store/authStore'
@@ -25,8 +25,16 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [isResending, setIsResending] = useState(false)
 
+  // Single submission lock ref
+  const isSubmittingRef = useRef(false)
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (isSubmittingRef.current || isLoading) {
+      return
+    }
+
     setGeneralError('')
     setResendSuccess('')
     setIsUnverified(false)
@@ -50,6 +58,7 @@ export default function LoginPage() {
       return
     }
 
+    isSubmittingRef.current = true
     setIsLoading(true)
 
     try {
@@ -60,6 +69,7 @@ export default function LoginPage() {
 
       if (error) {
         setIsLoading(false)
+        isSubmittingRef.current = false
         console.error('[Supabase SignIn Error]', error.message)
         const msg = error.message.toLowerCase()
 
@@ -68,6 +78,8 @@ export default function LoginPage() {
           setGeneralError('Please verify your email before signing in.')
         } else if (msg.includes('invalid login credentials') || msg.includes('invalid credentials')) {
           setGeneralError('Invalid email or password. Please check your credentials and try again.')
+        } else if (msg.includes('rate limit') || msg.includes('too many')) {
+          setGeneralError('Too many sign in attempts. Please wait a few moments before trying again.')
         } else if (msg.includes('network') || msg.includes('fetch')) {
           setGeneralError('Unable to connect. Please check your internet connection and try again.')
         } else {
@@ -78,6 +90,7 @@ export default function LoginPage() {
 
       if (!data?.user) {
         setIsLoading(false)
+        isSubmittingRef.current = false
         setGeneralError('Unable to sign in. Please try again.')
         return
       }
@@ -102,9 +115,11 @@ export default function LoginPage() {
       })
 
       setIsLoading(false)
+      isSubmittingRef.current = false
       navigate('/candidate/dashboard')
     } catch (err: any) {
       setIsLoading(false)
+      isSubmittingRef.current = false
       console.error('[CareerAI SignIn Exception]', err)
       setGeneralError('Unable to connect. Please check your internet connection and try again.')
     }
