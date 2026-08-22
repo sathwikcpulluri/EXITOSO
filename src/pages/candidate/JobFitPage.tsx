@@ -15,7 +15,6 @@ import {
   AlertTriangle,
   ArrowRight,
   TrendingUp,
-  MessageSquare,
   BookOpen,
 } from 'lucide-react'
 
@@ -218,14 +217,14 @@ export default function JobFitPage() {
           <Card className="bg-primary-50 border-primary-100 p-5">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
-                <h4 className="font-bold text-primary-950">Ready for Interview Prep?</h4>
+                <h4 className="font-bold text-primary-950">Explore Predicted Opportunities</h4>
                 <p className="text-xs text-primary-700 mt-0.5">
-                  Generate mock questions customized directly to this job description and your skill gaps.
+                  Browse open positions curated from the 262-role catalog matching this fit profile.
                 </p>
               </div>
-              <Link to="/candidate/interview-prep">
+              <Link to="/candidate/recommendations">
                 <Button className="gap-2 shrink-0">
-                  <MessageSquare className="h-4 w-4" /> Prepare with AI <ArrowRight className="h-4 w-4" />
+                  View Matched Jobs <ArrowRight className="h-4 w-4" />
                 </Button>
               </Link>
             </div>

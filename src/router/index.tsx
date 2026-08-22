@@ -10,15 +10,12 @@ const LandingPage = lazy(() => import('@/pages/shared/LandingPage'))
 const NotFoundPage = lazy(() => import('@/pages/shared/NotFoundPage'))
 const UnauthorizedPage = lazy(() => import('@/pages/shared/UnauthorizedPage'))
 
-// Lazy load candidate pages
+// Lazy load candidate pages (AI Resume & Job Prediction Platform)
 const CandidateDashboard = lazy(() => import('@/pages/candidate/DashboardPage'))
 const CandidateProfile = lazy(() => import('@/pages/candidate/ProfilePage'))
 const CandidateOnboarding = lazy(() => import('@/pages/candidate/OnboardingPage'))
 const JobFitPage = lazy(() => import('@/pages/candidate/JobFitPage'))
 const FitHistoryPage = lazy(() => import('@/pages/candidate/FitHistoryPage'))
-const InterviewPrepPage = lazy(() => import('@/pages/candidate/InterviewPrepPage'))
-const PracticeSessionPage = lazy(() => import('@/pages/candidate/PracticeSessionPage'))
-const PracticeHistoryPage = lazy(() => import('@/pages/candidate/PracticeHistoryPage'))
 const JobRecommendationsPage = lazy(() => import('@/pages/candidate/JobRecommendationsPage'))
 const SettingsPage = lazy(() => import('@/pages/candidate/SettingsPage'))
 
@@ -58,9 +55,6 @@ export const router = createBrowserRouter([
       { path: 'onboarding', element: <LazyWrapper><CandidateOnboarding /></LazyWrapper> },
       { path: 'job-fit', element: <LazyWrapper><JobFitPage /></LazyWrapper> },
       { path: 'fit-history', element: <LazyWrapper><FitHistoryPage /></LazyWrapper> },
-      { path: 'interview-prep', element: <LazyWrapper><InterviewPrepPage /></LazyWrapper> },
-      { path: 'practice', element: <LazyWrapper><PracticeSessionPage /></LazyWrapper> },
-      { path: 'practice-history', element: <LazyWrapper><PracticeHistoryPage /></LazyWrapper> },
       { path: 'recommendations', element: <LazyWrapper><JobRecommendationsPage /></LazyWrapper> },
       { path: 'settings', element: <LazyWrapper><SettingsPage /></LazyWrapper> },
     ],

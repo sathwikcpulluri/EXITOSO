@@ -5,15 +5,14 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { ScoreRing } from '@/components/ui/ScoreRing'
 import { ProgressBar } from '@/components/ui/ProgressBar'
+import { useAuthStore } from '@/store/authStore'
 import {
   mockCandidateProfile,
   mockFitAssessments,
   mockJobs,
-  mockPracticeSessions,
 } from '@/lib/mockData'
 import {
   Target,
-  MessageSquare,
   Sparkles,
   ArrowRight,
   TrendingUp,
@@ -21,15 +20,14 @@ import {
   CheckCircle2,
   AlertCircle,
   FileText,
+  BrainCircuit,
+  Zap,
 } from 'lucide-react'
-
-import { useAuthStore } from '@/store/authStore'
 
 export default function CandidateDashboard() {
   const { user } = useAuthStore()
   const profile = mockCandidateProfile
   const recentAssessments = mockFitAssessments
-  const recentPractice = mockPracticeSessions
   const topRecommendations = mockJobs.slice(0, 3)
   const displayName = user?.fullName || 'Candidate'
 
@@ -37,12 +35,12 @@ export default function CandidateDashboard() {
     <div className="space-y-6 animate-fade-in pb-10">
       <PageHeader
         title={`Welcome back, ${displayName}! 👋`}
-        subtitle="Track your job fit scores, AI interview preparations, and curated career opportunities."
+        subtitle="AI Role Prediction & Career Alignment Engine based on your verified skills and experience."
         actions={
           <Link to="/candidate/job-fit">
             <Button className="gap-2">
               <Target className="h-4 w-4" />
-              New Fit Assessment
+              New Fit Prediction
             </Button>
           </Link>
         }
@@ -58,7 +56,7 @@ export default function CandidateDashboard() {
             <div>
               <h3 className="font-semibold text-surface-900">Profile Completeness: {profile.profileCompleteness}%</h3>
               <p className="text-sm text-surface-600 mt-0.5">
-                Complete your target preferences and certifications to unlock more accurate AI recommendations.
+                AI extraction parsed 10 verified skills. Add target preferences to refine classification accuracy.
               </p>
               <div className="w-48 sm:w-64 mt-2">
                 <ProgressBar value={profile.profileCompleteness} color="primary" size="sm" />
@@ -67,7 +65,7 @@ export default function CandidateDashboard() {
           </div>
           <Link to="/candidate/profile">
             <Button variant="outline" size="sm" className="whitespace-nowrap">
-              Edit Profile
+              Edit Skills & Profile
             </Button>
           </Link>
         </div>
@@ -77,10 +75,10 @@ export default function CandidateDashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="p-5 flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-surface-500 uppercase tracking-wider">Top Match Score</p>
+            <p className="text-xs font-medium text-surface-500 uppercase tracking-wider">Top Match Index</p>
             <p className="text-2xl font-bold text-surface-900 mt-1">91%</p>
             <span className="text-xs text-emerald-600 font-medium flex items-center gap-1 mt-1">
-              <TrendingUp className="h-3.5 w-3.5" /> Strong match
+              <TrendingUp className="h-3.5 w-3.5" /> High Alignment
             </span>
           </div>
           <ScoreRing score={91} size="sm" />
@@ -88,9 +86,9 @@ export default function CandidateDashboard() {
 
         <Card className="p-5 flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-surface-500 uppercase tracking-wider">Completed Assessments</p>
+            <p className="text-xs font-medium text-surface-500 uppercase tracking-wider">Evaluated Roles</p>
             <p className="text-2xl font-bold text-surface-900 mt-1">{recentAssessments.length}</p>
-            <span className="text-xs text-surface-500 mt-1">Across 3 companies</span>
+            <span className="text-xs text-surface-500 mt-1">Across 262 Job Catalogs</span>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
             <Target className="h-6 w-6" />
@@ -99,20 +97,20 @@ export default function CandidateDashboard() {
 
         <Card className="p-5 flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-surface-500 uppercase tracking-wider">Practice Sessions</p>
-            <p className="text-2xl font-bold text-surface-900 mt-1">{recentPractice.length}</p>
-            <span className="text-xs text-primary-600 font-medium mt-1">Avg Score: 79%</span>
+            <p className="text-xs font-medium text-surface-500 uppercase tracking-wider">Extracted Skills</p>
+            <p className="text-2xl font-bold text-surface-900 mt-1">{profile.skills.length}</p>
+            <span className="text-xs text-emerald-600 font-medium mt-1">92% AI Confidence</span>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-            <MessageSquare className="h-6 w-6" />
+            <BrainCircuit className="h-6 w-6" />
           </div>
         </Card>
 
         <Card className="p-5 flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-surface-500 uppercase tracking-wider">Matched Roles</p>
+            <p className="text-xs font-medium text-surface-500 uppercase tracking-wider">Recommended Positions</p>
             <p className="text-2xl font-bold text-surface-900 mt-1">{mockJobs.length}</p>
-            <span className="text-xs text-surface-500 mt-1">Curated for your skills</span>
+            <span className="text-xs text-surface-500 mt-1">Curated for your stack</span>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
             <Briefcase className="h-6 w-6" />
@@ -127,8 +125,8 @@ export default function CandidateDashboard() {
           <Card className="p-6">
             <CardHeader className="flex flex-row items-center justify-between pb-3">
               <div>
-                <CardTitle className="text-lg">Recent Fit Assessments</CardTitle>
-                <p className="text-xs text-surface-500 mt-0.5">AI breakdown comparing your experience with target JDs</p>
+                <CardTitle className="text-lg">Recent AI Fit Predictions</CardTitle>
+                <p className="text-xs text-surface-500 mt-0.5">Multi-factor probability breakdown vs target job profiles</p>
               </div>
               <Link to="/candidate/fit-history">
                 <Button variant="ghost" size="sm" className="gap-1 text-xs">
@@ -180,9 +178,9 @@ export default function CandidateDashboard() {
                         <AlertCircle className="h-3.5 w-3.5" /> {assessment.skillGaps.length} gaps
                       </span>
                     </div>
-                    <Link to="/candidate/interview-prep">
-                      <Button variant="outline" size="sm" className="h-7 text-xs">
-                        Prep Interview
+                    <Link to="/candidate/job-fit">
+                      <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
+                        View Prediction Details <ArrowRight className="h-3 w-3" />
                       </Button>
                     </Link>
                   </div>
@@ -195,8 +193,8 @@ export default function CandidateDashboard() {
           <Card className="p-6">
             <CardHeader className="flex flex-row items-center justify-between pb-3">
               <div>
-                <CardTitle className="text-lg">AI Matched Opportunities</CardTitle>
-                <p className="text-xs text-surface-500 mt-0.5">High-fit positions based on your technical stack</p>
+                <CardTitle className="text-lg">AI Predicted Opportunities</CardTitle>
+                <p className="text-xs text-surface-500 mt-0.5">High-fit positions classified from the 262-role catalog</p>
               </div>
               <Link to="/candidate/recommendations">
                 <Button variant="ghost" size="sm" className="gap-1 text-xs">
@@ -234,31 +232,37 @@ export default function CandidateDashboard() {
           </Card>
         </div>
 
-        {/* Right Column: AI Interview Readiness & Actions */}
+        {/* Right Column: AI Prediction Summary & Quick Actions */}
         <div className="space-y-6">
           <Card padding="lg">
             <div className="text-center pb-4 border-b border-surface-100">
               <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-primary-50 text-primary-600 mb-3">
-                <Sparkles className="h-6 w-6" />
+                <BrainCircuit className="h-6 w-6" />
               </div>
-              <h3 className="font-bold text-surface-900 text-lg">AI Mock Interview</h3>
+              <h3 className="font-bold text-surface-900 text-lg">AI Role Prediction</h3>
               <p className="text-xs text-surface-500 mt-1">
-                Simulate targeted interview questions and receive instant AI feedback.
+                Evaluate match probability against custom JDs or industry benchmarks.
               </p>
-              <Link to="/candidate/practice" className="block mt-4">
+              <Link to="/candidate/job-fit" className="block mt-4">
                 <Button className="w-full gap-2">
-                  <MessageSquare className="h-4 w-4" /> Start AI Practice
+                  <Target className="h-4 w-4" /> Run Fit Prediction
                 </Button>
               </Link>
             </div>
 
             <div className="mt-4 space-y-3">
-              <h4 className="text-xs font-semibold text-surface-700 uppercase tracking-wider">Top Priority Tips</h4>
-              <div className="p-3 rounded-lg bg-amber-50/60 border border-amber-200/60 text-xs text-amber-900">
-                Practice explaining state management architecture & Redux Toolkit tradeoffs.
+              <h4 className="text-xs font-semibold text-surface-700 uppercase tracking-wider">Top Prediction Insights</h4>
+              <div className="p-3 rounded-lg bg-emerald-50/60 border border-emerald-200/60 text-xs text-emerald-900 space-y-1">
+                <p className="font-bold flex items-center gap-1">
+                  <Zap className="h-3.5 w-3.5 text-emerald-600" /> Full-Stack Match: 91%
+                </p>
+                <p>All core technologies (React, Node.js, PostgreSQL) verified in profile.</p>
               </div>
-              <div className="p-3 rounded-lg bg-primary-50/60 border border-primary-200/60 text-xs text-primary-900">
-                Structure behavioral answers using the STAR method for leadership questions.
+              <div className="p-3 rounded-lg bg-amber-50/60 border border-amber-200/60 text-xs text-amber-900 space-y-1">
+                <p className="font-bold flex items-center gap-1">
+                  <AlertCircle className="h-3.5 w-3.5 text-amber-600" /> Key Skill Gap: Redux
+                </p>
+                <p>Closing this gap elevates frontend alignment score to 95%+.</p>
               </div>
             </div>
           </Card>
@@ -280,12 +284,12 @@ export default function CandidateDashboard() {
                 <ArrowRight className="h-4 w-4 text-surface-400" />
               </Link>
               <Link
-                to="/candidate/practice-history"
+                to="/candidate/fit-history"
                 className="flex items-center justify-between p-2.5 rounded-lg hover:bg-surface-50 text-sm text-surface-700 transition-colors"
               >
                 <div className="flex items-center gap-2.5">
                   <TrendingUp className="h-4 w-4 text-surface-400" />
-                  <span>Interview Performance History</span>
+                  <span>Prediction Score History</span>
                 </div>
                 <ArrowRight className="h-4 w-4 text-surface-400" />
               </Link>
@@ -295,7 +299,7 @@ export default function CandidateDashboard() {
               >
                 <div className="flex items-center gap-2.5">
                   <Sparkles className="h-4 w-4 text-surface-400" />
-                  <span>Revisit Onboarding Guide</span>
+                  <span>Resume Parser Setup</span>
                 </div>
                 <ArrowRight className="h-4 w-4 text-surface-400" />
               </Link>

@@ -1,6 +1,15 @@
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
-import { Sparkles, Target, MessageSquare, TrendingUp, ShieldCheck, ArrowRight, BarChart3, Users } from 'lucide-react'
+import {
+  Sparkles,
+  Target,
+  BrainCircuit,
+  TrendingUp,
+  ArrowRight,
+  BarChart3,
+  Users,
+  FileCheck,
+} from 'lucide-react'
 
 export default function LandingPage() {
   return (
@@ -30,27 +39,29 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-6 pt-20 pb-32">
           <div className="text-center max-w-3xl mx-auto">
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-50 text-primary-700 text-sm font-medium mb-6">
-              <Sparkles className="h-4 w-4" />
-              AI-Powered Career Intelligence
+              <BrainCircuit className="h-4 w-4" />
+              AI Resume Analyzer & Job Role Prediction Engine
             </div>
             <h1 className="text-5xl sm:text-6xl font-bold text-surface-900 leading-tight mb-6">
-              Make Smarter
-              <span className="gradient-text"> Career Decisions</span>
-              <br />with AI Intelligence
+              Predict Your
+              <span className="gradient-text"> Best Job Match</span>
+              <br />with Machine Learning
             </h1>
             <p className="text-lg text-surface-500 max-w-2xl mx-auto mb-10">
-              Get instant job fit analysis, personalized interview preparation, and data-driven
-              career recommendations powered by advanced AI.
+              Benchmark your resume against 262 industry job profiles. Get instant multi-factor match scoring,
+              automated skill extraction, and data-driven gap analytics.
             </p>
             <div className="flex items-center justify-center gap-4">
               <Link to="/auth/register">
-                <Button size="lg" rightIcon={<ArrowRight className="h-5 w-5" />}>
-                  Start Free
+                <Button size="lg" className="gap-2">
+                  Start Free Analysis <ArrowRight className="h-5 w-5" />
                 </Button>
               </Link>
-              <Button variant="outline" size="lg">
-                View Demo
-              </Button>
+              <Link to="/candidate/job-fit">
+                <Button variant="outline" size="lg">
+                  Try Fit Predictor
+                </Button>
+              </Link>
             </div>
           </div>
         </div>
@@ -63,17 +74,17 @@ export default function LandingPage() {
       <section className="py-24 bg-surface-50">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold text-surface-900 mb-4">Four Powerful AI Modules</h2>
+            <h2 className="text-3xl font-bold text-surface-900 mb-4">Four Core AI Prediction Modules</h2>
             <p className="text-surface-500 max-w-xl mx-auto">
-              Comprehensive career intelligence for job seekers and employers alike.
+              Trained on 10,000+ synthetic resume samples and 262 benchmark job role profiles.
             </p>
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
-              { icon: Target, title: 'Job Fit Score', desc: 'Instant AI analysis of how well your profile matches any job description.', color: 'bg-primary-50 text-primary-600' },
-              { icon: MessageSquare, title: 'Interview Prep', desc: 'Personalized questions, practice sessions, and AI feedback to ace your interview.', color: 'bg-emerald-50 text-emerald-600' },
-              { icon: TrendingUp, title: 'Success Prediction', desc: 'Data-driven predictions of candidate success probability for hiring managers.', color: 'bg-violet-50 text-violet-600' },
-              { icon: ShieldCheck, title: 'Retention Risk', desc: 'Proactive employee churn risk assessment with actionable recommendations.', color: 'bg-amber-50 text-amber-600' },
+              { icon: FileCheck, title: 'Resume NER Parser', desc: 'Extracts skills across 115 standardized taxonomies, experience years, and degree levels.', color: 'bg-primary-50 text-primary-600' },
+              { icon: BrainCircuit, title: 'Job Role Classifier', desc: 'Predicts and ranks your top 3 matching career titles from 262 master job profiles.', color: 'bg-indigo-50 text-indigo-600' },
+              { icon: Target, title: 'Multi-Factor Fit Engine', desc: 'Calculates weighted probability across technical depth, experience ratios, and seniority.', color: 'bg-emerald-50 text-emerald-600' },
+              { icon: TrendingUp, title: 'Skill Gap Analytics', desc: 'Identifies missing required competencies with targeted actionable upskilling recommendations.', color: 'bg-amber-50 text-amber-600' },
             ].map((feature) => (
               <div key={feature.title} className="card-hover p-6 text-center">
                 <div className={`inline-flex items-center justify-center w-12 h-12 rounded-xl ${feature.color} mb-4`}>
@@ -91,14 +102,14 @@ export default function LandingPage() {
       <section className="py-24">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold text-surface-900 mb-4">How It Works</h2>
+            <h2 className="text-3xl font-bold text-surface-900 mb-4">How The Prediction Engine Works</h2>
           </div>
           <div className="grid md:grid-cols-4 gap-8">
             {[
-              { step: '1', icon: Users, title: 'Create Profile', desc: 'Upload your resume and set your career preferences.' },
-              { step: '2', icon: Target, title: 'Get Scored', desc: 'Paste any job description and get an instant fit analysis.' },
-              { step: '3', icon: MessageSquare, title: 'Practice', desc: 'Prepare with AI-generated questions tailored to each role.' },
-              { step: '4', icon: BarChart3, title: 'Improve', desc: 'Track your progress and close skill gaps with recommendations.' },
+              { step: '1', icon: Users, title: 'Upload Resume', desc: 'Parser extracts technical skills, years of experience, and career history.' },
+              { step: '2', icon: BrainCircuit, title: 'AI Role Matching', desc: 'Classifier compares your profile against 262 distinct role benchmarks.' },
+              { step: '3', icon: Target, title: 'Fit Probability', desc: 'Generates detailed multi-factor match score with positive & negative factors.' },
+              { step: '4', icon: BarChart3, title: 'Close Gaps', desc: 'View missing skill requirements and recommended positions.' },
             ].map((item) => (
               <div key={item.step} className="text-center">
                 <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-brand text-white text-xl font-bold mx-auto mb-4">
@@ -116,14 +127,14 @@ export default function LandingPage() {
       <section className="py-24 bg-gradient-dark">
         <div className="max-w-3xl mx-auto px-6 text-center">
           <h2 className="text-3xl font-bold text-white mb-4">
-            Ready to supercharge your career?
+            Ready to discover your optimal career match?
           </h2>
           <p className="text-white/70 mb-10">
-            Join thousands of professionals making smarter career decisions with AI.
+            Join thousands of candidates leveraging data-driven job role prediction and fit scoring.
           </p>
           <Link to="/auth/register">
-            <Button size="lg" rightIcon={<ArrowRight className="h-5 w-5" />}>
-              Get Started Free
+            <Button size="lg" className="gap-2">
+              Start Free Analysis <ArrowRight className="h-5 w-5" />
             </Button>
           </Link>
         </div>

@@ -6,7 +6,6 @@ import { Avatar } from '@/components/ui/Avatar'
 import {
   LayoutDashboard,
   Target,
-  MessageSquare,
   Briefcase,
   User,
   Settings,
@@ -25,11 +24,10 @@ interface NavItem {
 
 const candidateNav: NavItem[] = [
   { label: 'Dashboard', href: '/candidate/dashboard', icon: <LayoutDashboard className="h-5 w-5" /> },
-  { label: 'Job Fit Score', href: '/candidate/job-fit', icon: <Target className="h-5 w-5" /> },
-  { label: 'Interview Prep', href: '/candidate/interview-prep', icon: <MessageSquare className="h-5 w-5" /> },
+  { label: 'AI Role Predictor', href: '/candidate/job-fit', icon: <Target className="h-5 w-5" /> },
   { label: 'Recommendations', href: '/candidate/recommendations', icon: <Briefcase className="h-5 w-5" /> },
-  { label: 'Fit History', href: '/candidate/fit-history', icon: <History className="h-5 w-5" /> },
-  { label: 'Profile', href: '/candidate/profile', icon: <User className="h-5 w-5" /> },
+  { label: 'Prediction History', href: '/candidate/fit-history', icon: <History className="h-5 w-5" /> },
+  { label: 'Profile & Skills', href: '/candidate/profile', icon: <User className="h-5 w-5" /> },
 ]
 
 export function Sidebar() {

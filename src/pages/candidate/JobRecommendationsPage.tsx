@@ -137,12 +137,7 @@ export default function JobRecommendationsPage() {
                 <div className="flex flex-col gap-2">
                   <Link to="/candidate/job-fit">
                     <Button size="sm" className="w-full gap-1 text-xs">
-                      <Target className="h-3.5 w-3.5" /> Assess Fit
-                    </Button>
-                  </Link>
-                  <Link to="/candidate/interview-prep">
-                    <Button variant="outline" size="sm" className="w-full text-xs">
-                      Interview Prep
+                      <Target className="h-3.5 w-3.5" /> Predict Fit Score
                     </Button>
                   </Link>
                 </div>

@@ -13,20 +13,16 @@ import {
   Briefcase,
   X,
   Target,
-  MessageSquare,
   Sparkles,
 } from 'lucide-react'
 
 const routeTitles: Record<string, string> = {
   '/candidate/dashboard': 'Dashboard',
-  '/candidate/job-fit': 'Job Fit Score',
-  '/candidate/interview-prep': 'Interview Preparation',
+  '/candidate/job-fit': 'AI Role & Fit Predictor',
   '/candidate/recommendations': 'Job Recommendations',
-  '/candidate/fit-history': 'Assessment History',
+  '/candidate/fit-history': 'Prediction History',
   '/candidate/profile': 'My Profile',
   '/candidate/onboarding': 'Getting Started',
-  '/candidate/practice': 'Practice Session',
-  '/candidate/practice-history': 'Practice History',
   '/settings': 'Settings',
   '/candidate/settings': 'Settings',
 }
@@ -50,10 +46,10 @@ export function TopBar() {
   }
 
   const quickNav = [
-    { label: 'Job Fit Score Analyzer', href: '/candidate/job-fit', icon: Target },
-    { label: 'AI Mock Interview Prep', href: '/candidate/interview-prep', icon: MessageSquare },
-    { label: 'Job Recommendations', href: '/candidate/recommendations', icon: Briefcase },
-    { label: 'Update Profile & Skills', href: '/candidate/profile', icon: Sparkles },
+    { label: 'AI Role Predictor & Fit Analyzer', href: '/candidate/job-fit', icon: Target },
+    { label: 'Predicted Job Recommendations', href: '/candidate/recommendations', icon: Briefcase },
+    { label: 'Prediction & Assessment History', href: '/candidate/fit-history', icon: Target },
+    { label: 'Update Profile & Extracted Skills', href: '/candidate/profile', icon: Sparkles },
   ]
 
   const matchedJobs = mockJobs.filter((j) =>
