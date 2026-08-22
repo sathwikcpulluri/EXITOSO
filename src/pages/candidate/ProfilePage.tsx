@@ -7,7 +7,7 @@ import { Avatar } from '@/components/ui/Avatar'
 import { ProgressBar } from '@/components/ui/ProgressBar'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/lib/supabase'
-import { api } from '@/lib/api'
+import { api, type WorkExperienceItem, type EducationItem } from '@/lib/api'
 import { extractTextFromPdf } from '@/lib/pdfExtractor'
 import {
   User,
@@ -32,42 +32,19 @@ interface SkillItem {
   proficiency?: string
 }
 
-interface ExperienceItem {
-  id: string
-  title: string
-  company: string
-  startDate: string
-  endDate?: string
-  isCurrent?: boolean
-  description: string
-}
-
-interface EducationItem {
-  id: string
-  degree: string
-  institution: string
-  year: string
-}
-
-interface CertificationItem {
-  id: string
-  name: string
-  issuer: string
-  year: string
-}
-
 export default function CandidateProfilePage() {
-  const { user } = useAuthStore()
+  const { user, setUser } = useAuthStore()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Profile data states
+  // Real profile data states (Loaded strictly from Supabase)
+  const [candidateName, setCandidateName] = useState(user?.fullName || '')
   const [headline, setHeadline] = useState('')
   const [location, setLocation] = useState('')
   const [experienceYears, setExperienceYears] = useState<number>(0)
   const [skills, setSkills] = useState<SkillItem[]>([])
-  const [experience, setExperience] = useState<ExperienceItem[]>([])
+  const [experience, setExperience] = useState<WorkExperienceItem[]>([])
   const [education, setEducation] = useState<EducationItem[]>([])
-  const [certifications, setCertifications] = useState<CertificationItem[]>([])
+  const [certifications, setCertifications] = useState<string[]>([])
   const [resumeFilename, setResumeFilename] = useState<string | null>(null)
   const [parsingConfidence, setParsingConfidence] = useState<number>(0)
 
@@ -85,7 +62,7 @@ export default function CandidateProfilePage() {
   const [errorMessage, setErrorMessage] = useState('')
   const [newSkill, setNewSkill] = useState('')
 
-  const displayName = user?.fullName || 'Candidate'
+  const displayName = candidateName || user?.fullName || 'Candidate'
 
   // Fetch authenticated user's profile from Supabase on mount
   useEffect(() => {
@@ -106,13 +83,14 @@ export default function CandidateProfilePage() {
         if (error) {
           console.warn('[Supabase Profile Load Warning]', error.message)
         } else if (data) {
+          if (data.full_name) setCandidateName(data.full_name)
           setHeadline(data.headline || '')
           setLocation(data.location || '')
           setExperienceYears(Number(data.experience_years) || 0)
           setResumeFilename(data.resume_filename || null)
           setParsingConfidence(Number(data.parsing_confidence) || 0)
 
-          if (Array.isArray(data.skills) && data.skills.length > 0) {
+          if (Array.isArray(data.skills)) {
             setSkills(
               typeof data.skills[0] === 'string'
                 ? data.skills.map((s: string) => ({ name: s, category: 'technical' }))
@@ -178,6 +156,7 @@ export default function CandidateProfilePage() {
 
     try {
       const payload = {
+        full_name: candidateName || user.fullName,
         headline,
         location,
         experience_years: experienceYears,
@@ -205,6 +184,9 @@ export default function CandidateProfilePage() {
         console.error('[Supabase Save Profile Error]', error)
         setErrorMessage(`Failed to save changes: ${error.message}`)
       } else {
+        if (candidateName && candidateName !== user.fullName) {
+          setUser({ ...user, fullName: candidateName })
+        }
         setSaveSuccess('Profile changes saved successfully!')
         setTimeout(() => setSaveSuccess(''), 4000)
       }
@@ -232,7 +214,7 @@ export default function CandidateProfilePage() {
     setErrorMessage('')
     setSaveSuccess('')
 
-    // Validate file
+    // 1. Validate file
     const isPdf =
       file.type === 'application/pdf' ||
       file.name.toLowerCase().endsWith('.pdf')
@@ -250,7 +232,7 @@ export default function CandidateProfilePage() {
     setIsParsingResume(true)
 
     try {
-      // 1. Upload to Supabase Storage (if configured)
+      // 2. Upload to Supabase Storage (if configured)
       const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
       const storagePath = `${user.id}/${Date.now()}_${sanitizedName}`
 
@@ -262,58 +244,79 @@ export default function CandidateProfilePage() {
         console.warn('[Supabase Storage]', storageErr)
       }
 
-      // 2. Extract text from uploaded PDF
+      // 3. Extract text from uploaded PDF
       const pdfText = await extractTextFromPdf(file)
 
-      // 3. Send text to parsing engine
+      if (!pdfText || pdfText.trim().length < 15) {
+        setIsParsingResume(false)
+        setErrorMessage('Could not extract enough information from this resume. Please upload another PDF.')
+        return
+      }
+
+      // 4. Send text to parsing engine
       const parseResult = await api.parseResume(pdfText)
 
-      // 4. Update state with real extracted values
+      // 5. Update state with real extracted values
       const parsedSkillItems: SkillItem[] = parseResult.extracted_skills.map((s) => ({
         name: s.name,
         category: s.category || 'technical',
       }))
 
+      if (parseResult.full_name) {
+        setCandidateName(parseResult.full_name)
+        setUser({ ...user, fullName: parseResult.full_name })
+      }
+
+      if (parseResult.headline) {
+        setHeadline(parseResult.headline)
+      } else if (parsedSkillItems.length > 0) {
+        setHeadline(`${parsedSkillItems.slice(0, 3).map((s) => s.name).join(', ')} Professional`)
+      }
+
+      if (parseResult.location) {
+        setLocation(parseResult.location)
+      }
+
+      if (parseResult.years_experience !== undefined) {
+        setExperienceYears(parseResult.years_experience)
+      }
+
       setSkills(parsedSkillItems)
+      setExperience(parseResult.work_experience || [])
+      setEducation(parseResult.education || [])
+      setCertifications(parseResult.certifications || [])
       setResumeFilename(file.name)
-      setParsingConfidence(parseResult.confidence || 88)
+      setParsingConfidence(parseResult.confidence || 0)
 
-      if (parseResult.estimated_experience_years) {
-        setExperienceYears(parseResult.estimated_experience_years)
+      // 6. Persist extracted profile directly to Supabase
+      const updatePayload = {
+        full_name: parseResult.full_name || candidateName || user.fullName,
+        headline: parseResult.headline || (parsedSkillItems.length > 0 ? `${parsedSkillItems.slice(0, 3).map((s) => s.name).join(', ')} Professional` : null),
+        location: parseResult.location || location || null,
+        experience_years: parseResult.years_experience ?? experienceYears,
+        skills: parsedSkillItems,
+        experience: parseResult.work_experience || [],
+        education: parseResult.education || [],
+        certifications: parseResult.certifications || [],
+        resume_filename: file.name,
+        parsing_confidence: parseResult.confidence || 0,
+        updated_at: new Date().toISOString(),
       }
 
-      if (parsedSkillItems.length > 0 && !headline) {
-        setHeadline(`${parsedSkillItems.slice(0, 3).map((s) => s.name).join(', ')} Specialist`)
-      }
-
-      if (parseResult.detected_education && education.length === 0) {
-        setEducation([
-          {
-            id: `edu-${Date.now()}`,
-            degree: parseResult.detected_education,
-            institution: 'Verified University',
-            year: 'Graduated',
-          },
-        ])
-      }
-
-      // 5. Persist extracted profile directly to Supabase
       await supabase
         .from('profiles')
-        .update({
-          headline: headline || (parsedSkillItems.length > 0 ? `${parsedSkillItems.slice(0, 3).map((s) => s.name).join(', ')} Specialist` : 'Software Engineer'),
-          experience_years: parseResult.estimated_experience_years || experienceYears,
-          skills: parsedSkillItems,
-          resume_filename: file.name,
-          parsing_confidence: parseResult.confidence || 88,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updatePayload)
         .eq('id', user.id)
 
-      setSaveSuccess(`Resume "${file.name}" successfully parsed! ${parsedSkillItems.length} skills extracted.`)
+      setSaveSuccess('Resume analyzed successfully.')
     } catch (err: any) {
       console.error('[CareerAI Resume Parse Exception]', err)
-      setErrorMessage('Resume parsing failed. Please ensure the file is a readable PDF.')
+      const msg = err?.message || ''
+      if (msg.includes('enough') || msg.includes('readable')) {
+        setErrorMessage('Could not extract enough information from this resume.')
+      } else {
+        setErrorMessage('Resume analysis failed. Please try again.')
+      }
     } finally {
       setIsParsingResume(false)
     }
@@ -442,6 +445,19 @@ export default function CandidateProfilePage() {
             <div className="space-y-4">
               <div>
                 <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. John Doe"
+                  value={candidateName}
+                  onChange={(e) => setCandidateName(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white placeholder-neutral-500 text-xs focus:border-rose-500 focus:bg-white/[0.07] transition-all outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
                   Headline
                 </label>
                 <input
@@ -545,11 +561,11 @@ export default function CandidateProfilePage() {
                   No previous work experience entries logged. Upload a resume PDF to parse your career history.
                 </p>
               ) : (
-                experience.map((exp) => (
-                  <div key={exp.id} className="p-4 rounded-xl border border-white/[0.08] bg-white/[0.02] space-y-2">
+                experience.map((exp, idx) => (
+                  <div key={exp.id || idx} className="p-4 rounded-xl border border-white/[0.08] bg-white/[0.02] space-y-2">
                     <div className="flex items-start justify-between">
                       <div>
-                        <h4 className="font-bold text-white text-sm">{exp.title}</h4>
+                        <h4 className="font-bold text-white text-sm">{exp.job_title}</h4>
                         <p className="text-xs text-neutral-400 font-medium">{exp.company}</p>
                       </div>
                       <Badge variant={exp.isCurrent ? 'success' : 'neutral'} size="sm">
@@ -557,7 +573,7 @@ export default function CandidateProfilePage() {
                       </Badge>
                     </div>
                     <p className="text-[11px] text-neutral-500">
-                      {exp.startDate} — {exp.endDate || 'Present'}
+                      {exp.start_date} — {exp.end_date || 'Present'}
                     </p>
                     <p className="text-xs text-neutral-300 pt-1 leading-relaxed">{exp.description}</p>
                   </div>
@@ -579,9 +595,11 @@ export default function CandidateProfilePage() {
 
             {resumeFilename ? (
               <div className="p-3.5 bg-emerald-950/30 border border-emerald-500/30 rounded-xl text-xs text-emerald-300 space-y-1">
-                <p className="font-bold flex items-center gap-1.5">
-                  <Sparkles className="h-3.5 w-3.5 text-emerald-400" /> AI Parsing Confidence: {parsingConfidence}%
-                </p>
+                {parsingConfidence > 0 && (
+                  <p className="font-bold flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-emerald-400" /> AI Parsing Confidence: {parsingConfidence}%
+                  </p>
+                )}
                 <p className="text-neutral-400">
                   {skills.length} skills extracted from <span className="text-white font-medium">{resumeFilename}</span>.
                 </p>
@@ -603,7 +621,7 @@ export default function CandidateProfilePage() {
               {isParsingResume ? (
                 <>
                   <RefreshCw className="h-3.5 w-3.5 animate-spin text-orange-400" />
-                  Parsing Resume PDF...
+                  Analyzing your resume...
                 </>
               ) : (
                 <>
@@ -626,18 +644,18 @@ export default function CandidateProfilePage() {
                 <p className="text-xs text-neutral-500 italic">No education or certification records added yet.</p>
               ) : (
                 <>
-                  {education.map((edu) => (
-                    <div key={edu.id} className="text-xs border-b border-white/[0.08] pb-3 space-y-0.5">
+                  {education.map((edu, idx) => (
+                    <div key={edu.id || idx} className="text-xs border-b border-white/[0.08] pb-3 space-y-0.5">
                       <p className="font-bold text-white">{edu.degree}</p>
-                      <p className="text-neutral-500">{edu.institution} • {edu.year}</p>
+                      <p className="text-neutral-500">{edu.institution} • {edu.graduation_year}</p>
                     </div>
                   ))}
-                  {certifications.map((cert) => (
-                    <div key={cert.id} className="text-xs flex items-start gap-2 pt-1">
+                  {certifications.map((cert, idx) => (
+                    <div key={idx} className="text-xs flex items-start gap-2 pt-1">
                       <Award className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
                       <div>
-                        <p className="font-bold text-white">{cert.name}</p>
-                        <p className="text-neutral-500">{cert.issuer} • {cert.year}</p>
+                        <p className="font-bold text-white">{cert}</p>
+                        <p className="text-neutral-500">Verified Credential</p>
                       </div>
                     </div>
                   ))}

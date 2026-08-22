@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { Stepper } from '@/components/ui/Stepper'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/lib/supabase'
-import { api } from '@/lib/api'
+import { api, type ResumeParseResult } from '@/lib/api'
 import { extractTextFromPdf } from '@/lib/pdfExtractor'
 import {
   UploadCloud,
@@ -29,20 +29,21 @@ export default function CandidateOnboardingPage() {
 
   const [activeStep, setActiveStep] = useState(0)
 
-  // Real file & upload states (initial: null/false)
+  // Real file & upload states
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [uploaded, setUploaded] = useState(false)
   const [uploadError, setUploadError] = useState('')
+  const [parsedData, setParsedData] = useState<ResumeParseResult | null>(null)
   const [extractedSkills, setExtractedSkills] = useState<string[]>([])
 
-  // Dynamic user input state (populated after real extraction)
+  // Dynamic user input state (populated strictly after real extraction)
   const [candidateName, setCandidateName] = useState(user?.fullName || '')
   const [headline, setHeadline] = useState('')
-  const [experienceYears, setExperienceYears] = useState('3')
-  const [location, setLocation] = useState('San Francisco, CA')
-  const [targetTitle, setTargetTitle] = useState('Senior Software Engineer')
-  const [minSalary, setMinSalary] = useState('140000')
+  const [experienceYears, setExperienceYears] = useState('0')
+  const [location, setLocation] = useState('')
+  const [targetTitle, setTargetTitle] = useState('')
+  const [minSalary, setMinSalary] = useState('120000')
   const [workModel, setWorkModel] = useState('Remote / Hybrid')
 
   const steps = [
@@ -61,13 +62,13 @@ export default function CandidateOnboardingPage() {
   // Handle actual file selection & real backend extraction
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    // Reset file input value so same file can be re-selected if desired
     e.target.value = ''
 
     if (!file) return
 
     setUploadError('')
     setUploaded(false)
+    setParsedData(null)
 
     // 1. File Validation
     const isPdf =
@@ -97,40 +98,52 @@ export default function CandidateOnboardingPage() {
         const storagePath = `${user.id}/${Date.now()}_${sanitizedName}`
 
         try {
-          const { error: storageError } = await supabase.storage
+          await supabase.storage
             .from('resumes')
             .upload(storagePath, file, { upsert: true })
-
-          if (storageError) {
-            console.warn('[Supabase Storage]', storageError.message)
-          }
         } catch (storageErr) {
-          console.warn('[Supabase Storage Ex]', storageErr)
+          console.warn('[Supabase Storage]', storageErr)
         }
       }
 
       // 3. Extract text from real uploaded PDF
       const pdfText = await extractTextFromPdf(file)
 
-      // 4. Send real extracted text to AI parsing backend
+      if (!pdfText || pdfText.trim().length < 15) {
+        setIsUploading(false)
+        setUploaded(false)
+        setUploadError('Could not extract enough information from this resume. Please upload a readable PDF.')
+        return
+      }
+
+      // 4. Send real extracted text to AI parsing engine
       const parseResult = await api.parseResume(pdfText)
+      setParsedData(parseResult)
 
       // 5. Populate extracted details into form
       const skills = parseResult.extracted_skills.map((s) => s.name)
       setExtractedSkills(skills)
 
-      if (skills.length > 0) {
-        setHeadline(`${skills.slice(0, 3).join(', ')} Specialist`)
-      } else {
-        setHeadline('Software Engineer')
+      if (parseResult.full_name) {
+        setCandidateName(parseResult.full_name)
+      } else if (!candidateName && user?.fullName) {
+        setCandidateName(user.fullName)
       }
 
-      if (parseResult.estimated_experience_years) {
-        setExperienceYears(String(parseResult.estimated_experience_years))
+      if (parseResult.headline) {
+        setHeadline(parseResult.headline)
+        setTargetTitle(parseResult.headline.replace(/\s*Professional|\s*Specialist/i, ''))
+      } else if (skills.length > 0) {
+        setHeadline(`${skills.slice(0, 3).join(', ')} Professional`)
+        setTargetTitle(`${skills[0]} Engineer`)
       }
 
-      if (!candidateName) {
-        setCandidateName(user?.fullName || 'Candidate')
+      if (parseResult.location) {
+        setLocation(parseResult.location)
+      }
+
+      if (parseResult.years_experience !== undefined) {
+        setExperienceYears(String(parseResult.years_experience))
       }
 
       // Mark extraction as successful
@@ -140,7 +153,12 @@ export default function CandidateOnboardingPage() {
       console.error('[Resume Extraction Error]', err)
       setIsUploading(false)
       setUploaded(false)
-      setUploadError('Resume upload failed. Please try again.')
+      const msg = err?.message || ''
+      if (msg.includes('enough') || msg.includes('readable')) {
+        setUploadError('Could not extract enough information from this resume.')
+      } else {
+        setUploadError('Resume analysis failed. Please try again.')
+      }
     }
   }
 
@@ -167,18 +185,33 @@ export default function CandidateOnboardingPage() {
 
   const handleFinishOnboarding = async () => {
     if (user) {
+      const finalName = candidateName || user.fullName
       const updatedUser = {
         ...user,
-        fullName: candidateName || user.fullName,
+        fullName: finalName,
       }
       setUser(updatedUser)
 
-      // Sync to profiles table in Supabase
+      // Sync extracted information to profiles table in Supabase
       try {
         await supabase
           .from('profiles')
           .update({
-            full_name: candidateName || user.fullName,
+            full_name: finalName,
+            headline: headline || null,
+            location: location || null,
+            experience_years: Number(experienceYears) || 0,
+            skills: parsedData?.extracted_skills || extractedSkills.map((s) => ({ name: s, category: 'technical' })),
+            experience: parsedData?.work_experience || [],
+            education: parsedData?.education || [],
+            certifications: parsedData?.certifications || [],
+            preferences: {
+              workType: workModel ? [workModel] : ['Remote / Hybrid'],
+              industries: targetTitle ? [targetTitle] : ['Technology'],
+              salaryMin: Number(minSalary) || 0,
+            },
+            resume_filename: selectedFile?.name || null,
+            parsing_confidence: parsedData?.confidence || 0,
             updated_at: new Date().toISOString(),
           })
           .eq('id', user.id)
@@ -265,26 +298,19 @@ export default function CandidateOnboardingPage() {
 
               {isUploading ? (
                 <div className="space-y-1">
-                  <p className="font-semibold text-orange-400 text-sm">
-                    Parsing & extracting skills from {selectedFile?.name}...
-                  </p>
-                  <p className="text-xs text-neutral-400">Analyzing skills against 262 role profiles</p>
+                  <p className="font-semibold text-orange-400 text-sm">Analyzing your resume...</p>
+                  <p className="text-xs text-neutral-400">Extracting skills, experience, and role alignment from {selectedFile?.name}</p>
                 </div>
               ) : uploaded ? (
                 <div className="space-y-1">
-                  <p className="font-bold text-emerald-400 text-sm">Resume PDF successfully uploaded & extracted!</p>
+                  <p className="font-bold text-emerald-400 text-sm">Resume analyzed successfully.</p>
                   <p className="text-xs text-neutral-300 font-mono flex items-center justify-center gap-1.5 mt-1">
                     <FileText className="h-3.5 w-3.5 text-emerald-400" />
                     {selectedFile?.name} ({selectedFile ? formatFileSize(selectedFile.size) : ''})
                   </p>
                   <p className="text-xs text-neutral-400 mt-1">
-                    {extractedSkills.length} skills detected. Click "Next Step" to review extracted details.
+                    {extractedSkills.length} skills extracted. Click "Next Step" to review your verified profile.
                   </p>
-                </div>
-              ) : selectedFile ? (
-                <div className="space-y-1">
-                  <p className="font-bold text-white text-sm">{selectedFile.name}</p>
-                  <p className="text-xs text-neutral-400">{formatFileSize(selectedFile.size)}</p>
                 </div>
               ) : (
                 <div className="space-y-1">
@@ -301,7 +327,7 @@ export default function CandidateOnboardingPage() {
                   onClick={handleTriggerPicker}
                   className="text-xs text-neutral-400 hover:text-white underline cursor-pointer"
                 >
-                  Choose a different PDF
+                  Upload another PDF
                 </button>
               ) : <div />}
 
@@ -324,7 +350,7 @@ export default function CandidateOnboardingPage() {
                 <User className="h-5 w-5 text-orange-400" /> Verify Extracted Information
               </h3>
               <p className="text-xs sm:text-sm text-neutral-400">
-                Extracted from <span className="text-white font-semibold">{selectedFile?.name || 'Resume'}</span>. Review or adjust any fields below.
+                Extracted from <span className="text-white font-semibold">{selectedFile?.name || 'Resume PDF'}</span>. Review or adjust any fields below.
               </p>
             </div>
 
@@ -369,18 +395,20 @@ export default function CandidateOnboardingPage() {
                   type="text"
                   value={headline}
                   onChange={(e) => setHeadline(e.target.value)}
-                  placeholder="e.g. Full-Stack Engineer | React, TypeScript"
+                  placeholder="e.g. Python Developer / Backend Engineer"
                   className="w-full px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-xs focus:border-rose-500 focus:bg-white/[0.07] transition-all outline-none"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-neutral-300 uppercase tracking-wider mb-1.5">
                     Years of Experience
                   </label>
                   <input
                     type="number"
+                    min="0"
+                    max="50"
                     value={experienceYears}
                     onChange={(e) => setExperienceYears(e.target.value)}
                     className="w-full px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-xs focus:border-rose-500 focus:bg-white/[0.07] transition-all outline-none"
@@ -394,6 +422,7 @@ export default function CandidateOnboardingPage() {
                     type="text"
                     value={location}
                     onChange={(e) => setLocation(e.target.value)}
+                    placeholder="e.g. Austin, TX / Remote"
                     className="w-full px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-xs focus:border-rose-500 focus:bg-white/[0.07] transition-all outline-none"
                   />
                 </div>
@@ -432,6 +461,7 @@ export default function CandidateOnboardingPage() {
                   type="text"
                   value={targetTitle}
                   onChange={(e) => setTargetTitle(e.target.value)}
+                  placeholder="e.g. Senior Software Engineer"
                   className="w-full px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-xs focus:border-rose-500 focus:bg-white/[0.07] transition-all outline-none"
                 />
               </div>
