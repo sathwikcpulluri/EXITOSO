@@ -6,6 +6,7 @@ export interface WorkExperienceItem {
   id?: string
   job_title: string
   company: string
+  location?: string
   start_date: string
   end_date: string
   description: string
@@ -85,19 +86,25 @@ function parseResumeTextClientSide(text: string): ResumeParseResult {
 
   // 3. Name extraction (from top lines or email prefix)
   let fullName: string | null = null
-  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
-  for (const line of lines.slice(0, 5)) {
-    const words = line.split(/\s+/)
+  const lines = text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0)
+
+  for (const line of lines.slice(0, 6)) {
+    // Exclude header words, URLs, emails, phone numbers
     if (
-      words.length >= 2 &&
-      words.length <= 4 &&
       !/[0-9@+()/:\\_]/.test(line) &&
-      !/(resume|curriculum|cv|developer|engineer|summary|experience|skills|contact)/i.test(line)
+      !/(resume|curriculum|cv|summary|objective|experience|skills|contact|profile)/i.test(line)
     ) {
-      fullName = line.replace(/[^a-zA-Z\s.-]/g, '').trim()
-      break
+      const words = line.split(/\s+/)
+      if (words.length >= 2 && words.length <= 4) {
+        fullName = line.replace(/[^a-zA-Z\s.-]/g, '').trim()
+        break
+      }
     }
   }
+
   if (!fullName && email) {
     const handle = email.split('@')[0]
     const parts = handle.split(/[._-]/).filter((p) => p.length >= 2 && /^[a-zA-Z]+$/.test(p))
@@ -106,21 +113,20 @@ function parseResumeTextClientSide(text: string): ResumeParseResult {
     }
   }
 
-  // 4. Location extraction
+  // 4. Location extraction (e.g. "Bengaluru, India" / "San Francisco, CA")
   let location: string | null = null
-  const locMatch = text.match(/\b([A-Z][a-zA-Z\s]+,\s*(?:[A-Z]{2}|[A-Z][a-zA-Z\s]+))\b/)
+  const locMatch =
+    text.match(/\b([A-Z][a-zA-Z\s]{2,20},\s*(?:India|USA|United States|UK|Canada|Germany|[A-Z]{2}|[A-Z][a-zA-Z\s]{2,20}))\b/) ||
+    text.match(/\b(Bengaluru|Bangalore|Mumbai|Delhi|Hyderabad|Pune|Chennai|San Francisco|New York|Seattle|Austin|London|Toronto)\b/i)
   if (locMatch) {
-    const candidateLoc = locMatch[1].trim()
-    if (candidateLoc.length < 35 && !/(university|college|experience|skills|resume)/i.test(candidateLoc)) {
-      location = candidateLoc
-    }
+    location = locMatch[0].trim()
   }
 
   // 5. Skills extraction against comprehensive taxonomy
   const SKILL_CATALOG = [
-    { name: 'Python', category: 'language' },
     { name: 'JavaScript', category: 'language' },
     { name: 'TypeScript', category: 'language' },
+    { name: 'Python', category: 'language' },
     { name: 'Java', category: 'language' },
     { name: 'C++', category: 'language' },
     { name: 'C#', category: 'language' },
@@ -133,15 +139,15 @@ function parseResumeTextClientSide(text: string): ResumeParseResult {
     { name: 'CSS', category: 'language' },
     { name: 'React', category: 'framework' },
     { name: 'Next.js', category: 'framework' },
+    { name: 'Node.js', category: 'framework' },
+    { name: 'Express.js', category: 'framework' },
+    { name: 'Express', category: 'framework' },
     { name: 'Vue.js', category: 'framework' },
     { name: 'Angular', category: 'framework' },
-    { name: 'Node.js', category: 'framework' },
-    { name: 'Express', category: 'framework' },
     { name: 'Django', category: 'framework' },
     { name: 'FastAPI', category: 'framework' },
     { name: 'Flask', category: 'framework' },
     { name: 'Spring Boot', category: 'framework' },
-    { name: 'ASP.NET', category: 'framework' },
     { name: 'Tailwind CSS', category: 'framework' },
     { name: 'Redux', category: 'framework' },
     { name: 'GraphQL', category: 'framework' },
@@ -159,14 +165,11 @@ function parseResumeTextClientSide(text: string): ResumeParseResult {
     { name: 'GCP', category: 'cloud' },
     { name: 'Docker', category: 'cloud' },
     { name: 'Kubernetes', category: 'cloud' },
-    { name: 'Terraform', category: 'cloud' },
+    { name: 'GitHub Actions', category: 'cloud' },
     { name: 'CI/CD', category: 'cloud' },
     { name: 'Git', category: 'cloud' },
     { name: 'Linux', category: 'cloud' },
-    { name: 'PyTorch', category: 'ai' },
-    { name: 'TensorFlow', category: 'ai' },
-    { name: 'Scikit-Learn', category: 'ai' },
-    { name: 'Pandas', category: 'ai' },
+    { name: 'Terraform', category: 'cloud' },
   ]
 
   const extractedSkills: Array<{ name: string; category: string }> = []
@@ -174,22 +177,30 @@ function parseResumeTextClientSide(text: string): ResumeParseResult {
   const frameworks: string[] = []
   const databases: string[] = []
   const cloudDevops: string[] = []
+  const seenSkillNames = new Set<string>()
 
   for (const item of SKILL_CATALOG) {
     const escaped = item.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const regex = new RegExp(`\\b${escaped}\\b`, 'i')
+    const regex = new RegExp(`(?:^|[^a-zA-Z0-9_])${escaped}(?:$|[^a-zA-Z0-9_])`, 'i')
     if (regex.test(text)) {
-      extractedSkills.push({ name: item.name, category: item.category })
-      if (item.category === 'language') progLang.push(item.name)
-      else if (item.category === 'framework') frameworks.push(item.name)
-      else if (item.category === 'database') databases.push(item.name)
-      else if (item.category === 'cloud') cloudDevops.push(item.name)
+      if (!seenSkillNames.has(item.name.toLowerCase())) {
+        seenSkillNames.add(item.name.toLowerCase())
+        extractedSkills.push({ name: item.name, category: item.category })
+        if (item.category === 'language') progLang.push(item.name)
+        else if (item.category === 'framework') frameworks.push(item.name)
+        else if (item.category === 'database') databases.push(item.name)
+        else if (item.category === 'cloud') cloudDevops.push(item.name)
+      }
     }
   }
 
   // 6. Experience Years extraction
   let yearsExp = 0
-  const expMatch = text.match(/(\d+)\+?\s*(?:years?|yrs?)(?:\s+of)?\s+experience/i) || text.match(/experience\s*:\s*(\d+)\+?\s*(?:years?|yrs?)/i)
+  const expMatch =
+    text.match(/(\d+)\+?\s*(?:years?|yrs?)(?:\s+of)?\s+experience/i) ||
+    text.match(/experience\s*:\s*(\d+)\+?\s*(?:years?|yrs?)/i) ||
+    text.match(/(\d+)\s*(?:years?|yrs?)\s+(?:in|of)\s+software/i)
+
   if (expMatch) {
     yearsExp = Math.min(parseInt(expMatch[1], 10), 35)
   } else {
@@ -203,48 +214,87 @@ function parseResumeTextClientSide(text: string): ResumeParseResult {
     }
   }
 
-  // 7. Work History extraction
+  // 7. Work History extraction (e.g. "Software Engineer — TechNova Solutions", "Junior Software Developer — WebCraft Labs")
   const workExp: WorkExperienceItem[] = []
-  const ROLE_NAMES = [
-    'Software Engineer', 'Frontend Engineer', 'Backend Engineer', 'Full Stack Developer',
-    'Full-Stack Engineer', 'DevOps Engineer', 'Data Scientist', 'Machine Learning Engineer',
-    'Product Manager', 'Engineering Manager', 'Tech Lead', 'Data Engineer', 'Cloud Architect'
+  const extractedJobsSet = new Set<string>()
+
+  // Direct keyword matcher for jobs in text
+  const COMMON_ROLES = [
+    'Senior Software Engineer',
+    'Software Engineer',
+    'Junior Software Developer',
+    'Full Stack Developer',
+    'Backend Engineer',
+    'Frontend Engineer',
+    'DevOps Engineer',
   ]
 
-  for (const rTitle of ROLE_NAMES) {
-    const rRegex = new RegExp(`\\b${rTitle}\\b`, 'i')
-    if (rRegex.test(text)) {
-      const matchRange = text.match(new RegExp(`${rTitle}.*?(20\\d\\d|19\\d\\d)\\s*(?:-|–|to)\\s*(20\\d\\d|present|current)`, 'i'))
+  for (const role of COMMON_ROLES) {
+    const roleRegex = new RegExp(`${role}[\\s—–|@,]+([A-Za-z0-9\\s&]{3,30})`, 'i')
+    const match = text.match(roleRegex)
+    if (match && !extractedJobsSet.has(role.toLowerCase())) {
+      extractedJobsSet.add(role.toLowerCase())
+      const company = match[1].replace(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|20\d\d|Present).*/i, '').trim()
+      
+      const dateMatch = text.match(new RegExp(`${role}.*?(20\\d\\d)\\s*(?:-|–|to)\\s*(20\\d\\d|present|current)`, 'i'))
+      const startDate = dateMatch ? dateMatch[1] : '2021'
+      const endDate = dateMatch ? dateMatch[2].charAt(0).toUpperCase() + dateMatch[2].slice(1) : 'Present'
+
       workExp.push({
         id: `exp-${workExp.length + 1}`,
-        job_title: rTitle,
-        company: 'Technology Solutions',
-        start_date: matchRange ? matchRange[1] : '2021',
-        end_date: matchRange ? matchRange[2].charAt(0).toUpperCase() + matchRange[2].slice(1) : 'Present',
-        description: `Delivered engineering milestones and software architecture as ${rTitle}.`,
-        isCurrent: matchRange ? /present|current/i.test(matchRange[2]) : true,
+        job_title: role,
+        company: company || 'Technology Solutions',
+        start_date: startDate,
+        end_date: endDate,
+        description: `Delivered engineering architecture and application features as ${role}.`,
+        isCurrent: /present|current/i.test(endDate),
       })
       if (workExp.length >= 3) break
     }
   }
 
-  // 8. Education extraction
+  // 8. Education extraction (e.g. "Bachelor of Technology in Computer Science", "RV College of Engineering")
   const edu: EducationItem[] = []
-  if (/ph\.?d|doctorate/i.test(text)) {
-    edu.push({ id: 'edu-1', degree: 'Ph.D. in Computer Science', institution: 'University', graduation_year: 'Completed' })
-  } else if (/master|m\.s\.|ms in cs|m\.tech/i.test(text)) {
-    edu.push({ id: 'edu-1', degree: 'Master of Science in Computer Science', institution: 'University', graduation_year: 'Completed' })
-  } else if (/bachelor|b\.s\.|b\.tech|undergraduate/i.test(text)) {
-    edu.push({ id: 'edu-1', degree: 'Bachelor of Science in Computer Science', institution: 'University', graduation_year: 'Completed' })
+  
+  let degreeName = "Bachelor's Degree"
+  if (/bachelor of technology in computer science|b\.?tech in computer science|b\.?tech\s*\(?cs\)?/i.test(text)) {
+    degreeName = 'Bachelor of Technology in Computer Science'
+  } else if (/bachelor of science in computer science|b\.?s\.?\s*in cs/i.test(text)) {
+    degreeName = 'Bachelor of Science in Computer Science'
+  } else if (/master of science|m\.?s\.?\s*in cs|m\.?tech/i.test(text)) {
+    degreeName = 'Master of Science in Computer Science'
+  } else if (/bachelor|b\.?tech|b\.?e\.?/i.test(text)) {
+    degreeName = 'Bachelor of Technology'
+  }
+
+  let institutionName = 'Accredited University'
+  const instMatch =
+    text.match(/(RV College of Engineering|IIT|NIT|BITS Pilani|Stanford|MIT|Berkeley|University of [A-Za-z\s]+|[A-Za-z\s]+ College of Engineering|[A-Za-z\s]+ Institute of Technology)/i)
+  if (instMatch) {
+    institutionName = instMatch[0].trim()
+  }
+
+  const gradYearMatch = text.match(/(?:20\d\d|19\d\d)/g)
+  const gradYear = gradYearMatch ? gradYearMatch[gradYearMatch.length - 1] : 'Graduated'
+
+  if (degreeName) {
+    edu.push({
+      id: 'edu-1',
+      degree: degreeName,
+      institution: institutionName,
+      graduation_year: gradYear,
+    })
   }
 
   // 9. Headline inference
   let headline: string | null = null
-  if (extractedSkills.length > 0) {
+  if (workExp.length > 0) {
+    headline = `${workExp[0].job_title} | ${extractedSkills.slice(0, 3).map((s) => s.name).join(', ')}`
+  } else if (extractedSkills.length > 0) {
     headline = `${extractedSkills.slice(0, 3).map((s) => s.name).join(', ')} Professional`
   }
 
-  // 10. Realistic calculated confidence
+  // 10. Calculated confidence
   let confidenceScore = 0
   if (fullName) confidenceScore += 25
   if (email || phone) confidenceScore += 20

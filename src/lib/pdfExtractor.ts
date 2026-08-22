@@ -1,48 +1,69 @@
+import * as pdfjsLib from 'pdfjs-dist'
+
+// Configure worker for Vite environment
+if (typeof window !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+    'pdfjs-dist/build/pdf.worker.min.mjs',
+    import.meta.url
+  ).toString()
+}
+
 /**
- * In-browser text extractor for PDF documents
- * Extracts readable text streams from PDF ArrayBuffer without external binary dependencies.
+ * Extracts complete plain text content from any PDF file using PDF.js engine.
+ * Decodes all pages, text streams, and embedded font glyphs.
  */
 export async function extractTextFromPdf(file: File): Promise<string> {
-  const arrayBuffer = await file.arrayBuffer()
-  const bytes = new Uint8Array(arrayBuffer)
-  const decoder = new TextDecoder('utf-8', { fatal: false })
-  const content = decoder.decode(bytes)
-
-  const extractedChunks: string[] = []
-
-  // 1. Extract standard PDF Text Objects: BT ... ET
-  const textObjectRegex = /BT[\s\S]*?ET/g
-  const matches = content.match(textObjectRegex) || []
-
-  for (const block of matches) {
-    // Matches text inside parentheses: (Some text) Tj or [(Some) (text)] TJ
-    const stringMatches = block.match(/\(([^()]*)\)/g) || []
-    for (const str of stringMatches) {
-      const clean = str.slice(1, -1).trim()
-      if (clean.length > 0) {
-        extractedChunks.push(clean)
-      }
-    }
-  }
-
-  // 2. Extract plain alphanumeric word blocks if PDF was compressed/scanned
-  if (extractedChunks.length < 5) {
-    const rawTokens = content.match(/[A-Za-z0-9+#./-]{2,}/g) || []
-    const filtered = rawTokens.filter((token) => {
-      // Filter out PDF internal syntax keywords
-      const lower = token.toLowerCase()
-      return (
-        !lower.startsWith('obj') &&
-        !lower.startsWith('endobj') &&
-        !lower.startsWith('xref') &&
-        !lower.startsWith('stream') &&
-        !lower.startsWith('endstream') &&
-        token.length < 40
-      )
+  try {
+    const arrayBuffer = await file.arrayBuffer()
+    const loadingTask = pdfjsLib.getDocument({
+      data: new Uint8Array(arrayBuffer),
+      useSystemFonts: true,
     })
-    extractedChunks.push(...filtered.slice(0, 500))
-  }
 
-  const combined = extractedChunks.join(' ')
-  return combined.length > 20 ? combined : file.name.replace(/\.pdf$/i, '')
+    const pdfDoc = await loadingTask.promise
+    const pageTexts: string[] = []
+
+    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+      const page = await pdfDoc.getPage(pageNum)
+      const textContent = await page.getTextContent()
+      
+      const pageStrings = textContent.items
+        .map((item: any) => ('str' in item ? item.str : ''))
+        .filter(Boolean)
+      
+      pageTexts.push(pageStrings.join(' '))
+    }
+
+    const fullText = pageTexts.join('\n\n').trim()
+
+    // Debug logging (safe, no secrets)
+    console.log('[CareerAI PDF Extractor]', {
+      filename: file.name,
+      fileSizeBytes: file.size,
+      totalPages: pdfDoc.numPages,
+      extractedTextLength: fullText.length,
+      samplePreview: fullText.slice(0, 150),
+    })
+
+    return fullText
+  } catch (err) {
+    console.error('[CareerAI PDF Extractor Error]', err)
+    
+    // Fallback stream text recovery
+    const arrayBuffer = await file.arrayBuffer()
+    const bytes = new Uint8Array(arrayBuffer)
+    const decoder = new TextDecoder('utf-8', { fatal: false })
+    const rawContent = decoder.decode(bytes)
+    
+    const words = rawContent.match(/[A-Za-z0-9+#./@-]{2,}/g) || []
+    const filtered = words.filter(
+      (w) =>
+        !w.startsWith('obj') &&
+        !w.startsWith('endobj') &&
+        !w.startsWith('xref') &&
+        !w.startsWith('stream') &&
+        w.length < 35
+    )
+    return filtered.join(' ')
+  }
 }

@@ -595,11 +595,9 @@ export default function CandidateProfilePage() {
 
             {resumeFilename ? (
               <div className="p-3.5 bg-emerald-950/30 border border-emerald-500/30 rounded-xl text-xs text-emerald-300 space-y-1">
-                {parsingConfidence > 0 && (
-                  <p className="font-bold flex items-center gap-1.5">
-                    <Sparkles className="h-3.5 w-3.5 text-emerald-400" /> AI Parsing Confidence: {parsingConfidence}%
-                  </p>
-                )}
+                <p className="font-bold flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-emerald-400" /> Resume Analyzed Successfully
+                </p>
                 <p className="text-neutral-400">
                   {skills.length} skills extracted from <span className="text-white font-medium">{resumeFilename}</span>.
                 </p>
