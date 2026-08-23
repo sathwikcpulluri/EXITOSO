@@ -328,7 +328,37 @@ export interface StrictScoreBreakdown {
   professionalCommunication: number
 }
 
+export interface ScoresBreakdown {
+  accuracy: number
+  explanationQuality: number
+  confidence: number
+  clarity: number
+  fluency: number
+  professionalism: number
+}
+
+export interface AudioMetrics {
+  fillerWordCount: number
+  fillerRate: number
+  repetitionCount: number
+  longPauseCount: number
+  averagePauseDuration: number
+  speechRate: number
+}
+
+export interface EvidenceBreakdown {
+  confidence: string[]
+  clarity: string[]
+  fluency: string[]
+  professionalism: string[]
+}
+
 export interface EvaluateAudioAnswerResponse {
+  session_id?: string
+  question_id?: string
+  answer_id?: string
+  question_text?: string
+
   detectedLanguage?: string
   detected_language?: string
   languageConfidence?: number
@@ -347,7 +377,8 @@ export interface EvaluateAudioAnswerResponse {
   contentCoverage?: number
   offTopicRatio?: number
 
-  // 8 Core Parameters (0-10)
+  // Scores
+  scores?: ScoresBreakdown
   accuracy?: number
   explanationQuality?: number
   confidence?: number
@@ -356,11 +387,13 @@ export interface EvaluateAudioAnswerResponse {
   professionalism?: number
 
   // Speech Analysis Metrics
+  audioMetrics?: AudioMetrics
   fillerWordCount?: number
   fillerRate?: number
   repetitionCount?: number
   averagePauseDuration?: number
   longPauseCount?: number
+  speechRate?: number
 
   baseScore?: number
   finalScore?: number
@@ -368,6 +401,9 @@ export interface EvaluateAudioAnswerResponse {
   overall_score?: number
   content_score?: number
   delivery_score?: number
+
+  // Evidence
+  evidence?: EvidenceBreakdown
 
   parameter_scores?: ParameterScores28
   special_scores?: SpecialScores
@@ -1721,9 +1757,47 @@ export const api = {
       const uncertaintyCount = uncertaintyMatches ? uncertaintyMatches.length : 0
       const p_confidence = uncertaintyCount === 0 && wordCount >= 15 ? 9.5 : (uncertaintyCount <= 1 ? 8.5 : 5.5)
 
-      const p_clarity = wordCount >= 15 && fillerWordCount <= 2 ? 9.4 : (wordCount >= 10 ? 8.0 : 5.0)
-      const p_fluency = fillerWordCount <= 1 && repetitionCount === 0 ? 9.6 : (fillerWordCount <= 3 ? 8.0 : (fillerWordCount <= 6 ? 6.0 : 3.5))
-      const p_professionalism = 9.5
+      // 5. Evidence generation
+      const confidenceEvidence: string[] = []
+      if (uncertaintyCount === 0 && wordCount >= 12) {
+        confidenceEvidence.push('Used decisive explanations without unnecessary hesitation or apologies.')
+        if (hasAction) confidenceEvidence.push('Clearly stated specific actions and engineering decisions.')
+      } else if (uncertaintyCount <= 1 && wordCount >= 8) {
+        confidenceEvidence.push('Generally confident delivery with minor conversational qualification.')
+      } else if (uncertaintyCount <= 3) {
+        confidenceEvidence.push(`Expressed uncertainty (${uncertaintyCount} occurrences of 'maybe'/'I guess'/'I think').`)
+      } else {
+        confidenceEvidence.push('Frequent uncertainty markers reduced communication authority.')
+      }
+
+      const p_clarity = wordCount >= 15 && fillerWordCount <= 2 ? 9.4 : (wordCount >= 10 && fillerWordCount <= 4 ? 8.0 : (wordCount >= 6 ? 6.0 : 3.0))
+      const clarityEvidence: string[] = []
+      if (wordCount >= 15 && fillerWordCount <= 2) {
+        clarityEvidence.push('Main points were communicated clearly with structured, coherent sentences.')
+        if (hasTech) clarityEvidence.push('Technical concepts were articulated in an understandable context.')
+      } else if (wordCount >= 10 && fillerWordCount <= 4) {
+        clarityEvidence.push('Understandable response with minor conversational shifts.')
+      } else {
+        clarityEvidence.push('Brief or fragmented wording made the core explanation ambiguous.')
+      }
+
+      const p_fluency = fillerWordCount <= 1 && repetitionCount === 0 && longPauseCount <= 1 ? 9.6 : (fillerWordCount <= 3 && repetitionCount <= 1 && longPauseCount <= 2 ? 8.0 : (fillerWordCount <= 6 && repetitionCount <= 2 ? 5.5 : (fillerWordCount <= 10 ? 4.0 : 2.0)))
+      const fluencyEvidence: string[] = []
+      if (fillerWordCount <= 1 && repetitionCount === 0 && longPauseCount <= 1) {
+        fluencyEvidence.push('Smooth speech delivery with minimal filler words.')
+      } else if (fillerWordCount <= 3 && repetitionCount <= 1 && longPauseCount <= 2) {
+        fluencyEvidence.push(`Acceptable conversational flow (${fillerWordCount} fillers detected).`)
+      } else if (fillerWordCount <= 6) {
+        fluencyEvidence.push(`Noticeable speech hesitation with ${fillerWordCount} filler words and ${repetitionCount} repetitions.`)
+      } else {
+        fluencyEvidence.push(`Frequent disfluency (${fillerWordCount} fillers: 'um', 'uh', 'like') interrupted answer delivery.`)
+      }
+
+      const unprofessionalMatches = transcriptLower.match(/\b(stupid|idiot|useless|hate|trash|hell|damn|crap|shit|fuck|worst\s+boss|terrible\s+manager)\b/g)
+      const p_professionalism = unprofessionalMatches ? 2.0 : (wordCount >= 10 ? 9.5 : (wordCount >= 5 ? 8.0 : 5.0))
+      const professionalismEvidence: string[] = unprofessionalMatches
+        ? [`Used unprofessional or unconstructive phrasing (${unprofessionalMatches.join(', ')}).`]
+        : ['Constructive workplace tone and professional, respectful communication.']
 
       // Base score calculation
       let baseScore = (
@@ -1752,6 +1826,7 @@ export const api = {
 
       baseScore = Number(baseScore.toFixed(1))
       finalScore = Number(finalScore.toFixed(1))
+      const speechRate = Number(((wordCount / Math.max(wordCount * 0.45, 2.0)) * 60).toFixed(1))
 
       return {
         detectedLanguage: 'English',
@@ -1771,17 +1846,40 @@ export const api = {
         answerRelevance: p_relevance,
         contentCoverage,
         offTopicRatio,
+        scores: {
+          accuracy: p_accuracy,
+          explanationQuality: p_explanation,
+          confidence: p_confidence,
+          clarity: p_clarity,
+          fluency: p_fluency,
+          professionalism: p_professionalism,
+        },
         accuracy: p_accuracy,
         explanationQuality: p_explanation,
         confidence: p_confidence,
         clarity: p_clarity,
         fluency: p_fluency,
         professionalism: p_professionalism,
+        audioMetrics: {
+          fillerWordCount,
+          fillerRate,
+          repetitionCount,
+          longPauseCount,
+          averagePauseDuration,
+          speechRate,
+        },
         fillerWordCount,
         fillerRate,
         repetitionCount,
         averagePauseDuration,
         longPauseCount,
+        speechRate,
+        evidence: {
+          confidence: confidenceEvidence,
+          clarity: clarityEvidence,
+          fluency: fluencyEvidence,
+          professionalism: professionalismEvidence,
+        },
         baseScore,
         finalScore,
         overallScore: finalScore,
@@ -1832,18 +1930,18 @@ export const api = {
         weaknesses: p_relevance < 5.0 ? [
           'Answer did not address the required question topic and consisted mainly of generic statements.',
           'Missing required technical actions, situation context, and measurable outcomes.',
-        ] : (fillerWordCount >= 5 ? [`Detected ${fillerWordCount} speech fillers ('um', 'uh', 'like'). Try pausing briefly.`] : []),
+        ] : (fillerWordCount >= 4 ? [`Detected ${fillerWordCount} speech fillers ('um', 'uh', 'like'). Try pausing briefly.`] : []),
         feedback: p_relevance <= 3.5 ? (
           `English verified (Confidence: 98%). Your speech was understandable, but the answer did not address the question. The prompt asked about '${category.replace('_', ' ')}: ${questionText.slice(0, 70)}...', but your response mainly described generic personal qualities without concrete project evidence.`
-        ) : `English verified (Confidence: 98%). Good ${category.replace('_', ' ')} response with an overall score of ${finalScore}/10.0.`,
+        ) : `English verified (Confidence: 98%). The answer addressed '${category.replace('_', ' ')}' with an overall score of ${finalScore}/10.0. Relevance: ${p_relevance}/10.0, Confidence: ${p_confidence}/10.0, Fluency: ${p_fluency}/10.0.`,
         improvementTip: p_relevance <= 3.5
           ? 'Answer the prompt directly: state the exact problem or situation first, explain your personal technical actions, and conclude with the result.'
           : 'To reach a perfect score, reduce unnecessary fillers and ensure claims are reinforced with quantifiable production metrics.',
         improvement_tip: p_relevance <= 3.5
           ? 'Answer the prompt directly: state the exact problem or situation first, explain your personal technical actions, and conclude with the result.'
           : 'To reach a perfect score, reduce unnecessary fillers and ensure claims are reinforced with quantifiable production metrics.',
-        model_version: 'gemini-1.5-flash-speech-v4',
-        rubric_version: 'rubric-confidence-clarity-fluency-v4',
+        model_version: 'gemini-1.5-flash-speech-v5',
+        rubric_version: 'rubric-strict-evidence-first-v5',
       }
     }
   },

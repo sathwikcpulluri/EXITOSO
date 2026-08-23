@@ -29,6 +29,7 @@ import {
   Volume2,
   RotateCcw,
   Check,
+  CheckCircle2,
   HelpCircle,
   Square,
   Globe2,
@@ -512,6 +513,7 @@ export default function AudioInterviewPage() {
       }
 
       // Send to Backend Evaluator
+      const currentAnswerId = `ans_${currentQ.id}_${Date.now()}`
       const formData = new FormData()
       if (audioBlob) {
         formData.append('audio_file', audioBlob, `${currentQ.id}.webm`)
@@ -522,6 +524,12 @@ export default function AudioInterviewPage() {
       formData.append('question_text', currentQ.question_text)
       formData.append('category', currentQ.category)
       formData.append('expected_topics', JSON.stringify(currentQ.expected_topics))
+      formData.append('session_id', sessionId)
+      formData.append('question_id', currentQ.id)
+      formData.append('answer_id', currentAnswerId)
+      if (recordingSeconds > 0) {
+        formData.append('duration_seconds', String(recordingSeconds))
+      }
 
       const result = await api.evaluateAudioAnswer(formData)
       setCurrentEvaluation(result)
@@ -612,16 +620,21 @@ export default function AudioInterviewPage() {
     }
   }
 
-  // Advance to Next Question
+  // Advance to Next Question with Clean State Reset
   const handleNextQuestion = () => {
     if (currentIndex < questions.length - 1) {
       setCurrentIndex((prev) => prev + 1)
       setAudioBlob(null)
       setAudioUrl(null)
       setTextAnswer('')
+      setLiveTranscript('')
       setCurrentEvaluation(null)
       setIsEnglishWarning(false)
       setErrorMessage('')
+      setIsRecording(false)
+      setRecordingSeconds(0)
+      setAudioLevel(0)
+      setEqualizerHeights(new Array(24).fill(8))
     } else {
       finishSession()
     }
@@ -1235,6 +1248,57 @@ export default function AudioInterviewPage() {
                         Try reducing filler words ('um', 'uh') and shortening pauses between ideas for a smoother delivery.
                       </p>
                     </div>
+
+                    {/* Observable Evidence Card */}
+                    {currentEvaluation.evidence && (
+                      <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/[0.08] space-y-2.5">
+                        <strong className="text-orange-400 font-bold text-xs flex items-center gap-1.5">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> Spoken Communication Evidence
+                        </strong>
+                        <div className="space-y-2 text-[11px]">
+                          {currentEvaluation.evidence.confidence?.length > 0 && (
+                            <div>
+                              <span className="text-neutral-400 font-semibold block">Confidence:</span>
+                              <ul className="list-disc list-inside text-neutral-300 space-y-0.5 pl-1">
+                                {currentEvaluation.evidence.confidence.map((e, idx) => (
+                                  <li key={idx}>{e}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {currentEvaluation.evidence.clarity?.length > 0 && (
+                            <div>
+                              <span className="text-neutral-400 font-semibold block">Clarity:</span>
+                              <ul className="list-disc list-inside text-neutral-300 space-y-0.5 pl-1">
+                                {currentEvaluation.evidence.clarity.map((e, idx) => (
+                                  <li key={idx}>{e}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {currentEvaluation.evidence.fluency?.length > 0 && (
+                            <div>
+                              <span className="text-neutral-400 font-semibold block">Fluency:</span>
+                              <ul className="list-disc list-inside text-neutral-300 space-y-0.5 pl-1">
+                                {currentEvaluation.evidence.fluency.map((e, idx) => (
+                                  <li key={idx}>{e}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {currentEvaluation.evidence.professionalism?.length > 0 && (
+                            <div>
+                              <span className="text-neutral-400 font-semibold block">Professionalism:</span>
+                              <ul className="list-disc list-inside text-neutral-300 space-y-0.5 pl-1">
+                                {currentEvaluation.evidence.professionalism.map((e, idx) => (
+                                  <li key={idx}>{e}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
 
