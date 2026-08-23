@@ -14,6 +14,7 @@ import {
   History,
   Sparkles,
   Send,
+  BrainCircuit,
   X,
 } from 'lucide-react'
 
@@ -28,6 +29,7 @@ const candidateNav: NavItem[] = [
   { label: 'AI Role Predictor', href: '/candidate/job-fit', icon: <Target className="h-5 w-5" /> },
   { label: 'Hiring Probability', href: '/candidate/hiring-probability', icon: <Sparkles className="h-5 w-5" /> },
   { label: 'Recommendations', href: '/candidate/recommendations', icon: <Briefcase className="h-5 w-5" /> },
+  { label: 'Audio Interview', href: '/candidate/practice', icon: <BrainCircuit className="h-5 w-5" /> },
   { label: 'Application Tracker', href: '/candidate/applications', icon: <Send className="h-5 w-5" /> },
   { label: 'Prediction History', href: '/candidate/fit-history', icon: <History className="h-5 w-5" /> },
   { label: 'Profile & Skills', href: '/candidate/profile', icon: <User className="h-5 w-5" /> },

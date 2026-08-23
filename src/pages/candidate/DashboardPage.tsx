@@ -298,7 +298,7 @@ export default function CandidateDashboard() {
                 Assess interview readiness, practice role-specific questions and receive AI feedback on key architectural talking points.
               </p>
             </div>
-            <Link to="/candidate/recommendations">
+            <Link to="/candidate/practice">
               <Button variant="outline" size="sm" className="w-full text-xs cursor-pointer">
                 Practice Interview
               </Button>
