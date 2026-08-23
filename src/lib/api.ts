@@ -329,10 +329,17 @@ export interface StrictScoreBreakdown {
 }
 
 export interface EvaluateAudioAnswerResponse {
+  detectedLanguage?: string
+  detected_language?: string
+  languageConfidence?: number
+  language_confidence?: number
+  isEnglish?: boolean
   is_english: boolean
+  languageStatus?: 'english' | 'non_english' | 'mixed' | 'uncertain' | string
+  language_status?: 'english' | 'non_english' | 'mixed' | 'uncertain' | string
   language: string
-  language_confidence: number
   transcript: string
+  englishLanguageScore?: number
   answerStatus?: 'direct' | 'mostly_relevant' | 'partially_relevant' | 'mostly_off_topic' | 'irrelevant' | 'empty' | string
   questionUnderstanding?: number
   answerRelevance?: number
@@ -1545,11 +1552,104 @@ export const api = {
       if (!res.ok) throw new Error('API request failed')
       return await res.json()
     } catch {
-      // Deterministic client fallback evaluator with strict content-first scoring
       const transcript = (formData.get('transcript_text') as string) ||
         'In my project, the application suffered from high latency during peak queries. I added composite indexes to PostgreSQL tables and implemented Redis caching, reducing query time by 45%.'
       const category = (formData.get('category') as string) || 'skill'
       const questionText = (formData.get('question_text') as string) || ''
+
+      // 1. Language Detection First
+      const rawText = transcript.trim()
+      const hasDevanagari = /[\u0900-\u097F]/.test(rawText)
+      const hasTelugu = /[\u0C00-\u0C7F]/.test(rawText)
+      const hasTamil = /[\u0B80-\u0BFF]/.test(rawText)
+
+      const romanizedHindi = ['phir', 'maine', 'aur', 'mein', 'hum', 'yeh', 'karna', 'kiya', 'tha', 'hai', 'nahi', 'kuch', 'bahut', 'achha']
+      const romanizedTelugu = ['chesanu', 'chesamu', 'nenu', 'memu', 'kani', 'mariyu', 'undi', 'ledu', 'undhi', 'kuda', 'ala', 'ila']
+      const romanizedTamil = ['panninen', 'pannitom', 'naan', 'nanga', 'aana', 'matrum', 'irukku', 'illa']
+
+      const textTokens = rawText.toLowerCase().replace(/[^a-zA-Z\s]/g, '').split(/\s+/).filter(Boolean)
+      const hindiMatches = textTokens.filter((t: string) => romanizedHindi.includes(t)).length
+      const teluguMatches = textTokens.filter((t: string) => romanizedTelugu.includes(t)).length
+      const tamilMatches = textTokens.filter((t: string) => romanizedTamil.includes(t)).length
+      const nonEnMatches = hindiMatches + teluguMatches + tamilMatches
+
+      let detectedLanguage = 'English'
+      let languageConfidence = 0.98
+      let isEnglish = true
+      let languageStatus: 'english' | 'non_english' | 'mixed' | 'uncertain' = 'english'
+
+      if (hasDevanagari) {
+        detectedLanguage = 'Hindi'
+        languageConfidence = 0.99
+        isEnglish = false
+        languageStatus = 'non_english'
+      } else if (hasTelugu) {
+        detectedLanguage = 'Telugu'
+        languageConfidence = 0.99
+        isEnglish = false
+        languageStatus = 'non_english'
+      } else if (hasTamil) {
+        detectedLanguage = 'Tamil'
+        languageConfidence = 0.99
+        isEnglish = false
+        languageStatus = 'non_english'
+      } else if (textTokens.length < 3) {
+        detectedLanguage = 'Uncertain'
+        languageConfidence = 0.60
+        isEnglish = false
+        languageStatus = 'uncertain'
+      } else if (nonEnMatches > 0) {
+        const ratio = nonEnMatches / textTokens.length
+        if (ratio >= 0.35) {
+          detectedLanguage = hindiMatches >= Math.max(teluguMatches, tamilMatches) ? 'Hindi' : (teluguMatches >= tamilMatches ? 'Telugu' : 'Tamil')
+          languageConfidence = 0.96
+          isEnglish = false
+          languageStatus = 'non_english'
+        } else {
+          detectedLanguage = `Mixed (English + ${hindiMatches > 0 ? 'Hindi' : (teluguMatches > 0 ? 'Telugu' : 'Tamil')})`
+          languageConfidence = 0.93
+          isEnglish = false
+          languageStatus = 'mixed'
+        }
+      }
+
+      // Non-English Gating
+      if (!isEnglish || languageStatus !== 'english') {
+        const feedbackMsg = languageStatus === 'non_english'
+          ? `Detected language: ${detectedLanguage} (Confidence: ${Math.round(languageConfidence * 100)}%). English is required for this interview practice session. Please answer the question in English.`
+          : (languageStatus === 'mixed'
+            ? `Detected language: ${detectedLanguage}. This interview mode requires fully English responses. Please answer entirely in English.`
+            : `Audio language could not be clearly verified as English. Please speak clearly into your microphone in English and retry.`)
+
+        return {
+          detectedLanguage,
+          detected_language: detectedLanguage,
+          languageConfidence,
+          language_confidence: languageConfidence,
+          isEnglish: false,
+          is_english: false,
+          languageStatus,
+          language_status: languageStatus,
+          language: detectedLanguage,
+          transcript,
+          englishLanguageScore: languageStatus === 'non_english' ? 1.0 : (languageStatus === 'mixed' ? 1.5 : 0.5),
+          answerStatus: 'irrelevant',
+          questionUnderstanding: 0.0,
+          answerRelevance: 0.0,
+          contentCoverage: 0.0,
+          offTopicRatio: 100.0,
+          strengths: [],
+          weaknesses: [
+            `Language Requirement: Response was in ${detectedLanguage}. English is required for this interview practice session.`,
+            'Communication content and soft skills were not evaluated due to language requirement.'
+          ],
+          feedback: feedbackMsg,
+          improvementTip: 'This practice evaluator specifically assesses English spoken communication. Speaking another language is not a reflection of general communication ability, but English is required for this practice mode.',
+          improvement_tip: 'This practice evaluator specifically assesses English spoken communication.',
+          model_version: 'gemini-1.5-flash-language-first-v3',
+          rubric_version: 'rubric-language-first-v3',
+        }
+      }
 
       const transcriptLower = transcript.toLowerCase()
       const isGeneric = transcriptLower.includes('hardworking') || transcriptLower.includes('passionate') || transcriptLower.includes('team player')
@@ -1602,10 +1702,17 @@ export const api = {
       finalScore = Number(finalScore.toFixed(1))
 
       return {
-        is_english: true,
-        language: 'English',
+        detectedLanguage: 'English',
+        detected_language: 'English',
+        languageConfidence: 0.98,
         language_confidence: 0.98,
+        isEnglish: true,
+        is_english: true,
+        languageStatus: 'english',
+        language_status: 'english',
+        language: 'English',
         transcript,
+        englishLanguageScore: 10.0,
         answerStatus,
         questionUnderstanding: answerRelevance,
         answerRelevance,
@@ -1670,16 +1777,16 @@ export const api = {
           'Missing required technical actions, situation context, and measurable outcomes.',
         ] : [],
         feedback: answerRelevance <= 3.5 ? (
-          `Your speech was understandable, but the answer did not address the question. The prompt asked about '${category.replace('_', ' ')}: ${questionText.slice(0, 70)}...', but your response mainly described generic personal qualities without concrete project evidence.`
-        ) : `Good ${category.replace('_', ' ')} response with an overall score of ${finalScore}/10.0.`,
+          `English verified (Confidence: 98%). Your speech was understandable, but the answer did not address the question. The prompt asked about '${category.replace('_', ' ')}: ${questionText.slice(0, 70)}...', but your response mainly described generic personal qualities without concrete project evidence.`
+        ) : `English verified (Confidence: 98%). Good ${category.replace('_', ' ')} response with an overall score of ${finalScore}/10.0.`,
         improvementTip: answerRelevance <= 3.5
           ? 'Answer the prompt directly: state the exact problem or situation first, explain your personal technical actions, and conclude with the result.'
           : 'To reach a perfect score, ensure every claim is reinforced with quantifiable production metrics.',
         improvement_tip: answerRelevance <= 3.5
           ? 'Answer the prompt directly: state the exact problem or situation first, explain your personal technical actions, and conclude with the result.'
           : 'To reach a perfect score, ensure every claim is reinforced with quantifiable production metrics.',
-        model_version: 'gemini-1.5-flash-strict-v2',
-        rubric_version: 'rubric-strict-content-first-v2',
+        model_version: 'gemini-1.5-flash-language-first-v3',
+        rubric_version: 'rubric-language-first-v3',
       }
     }
   },

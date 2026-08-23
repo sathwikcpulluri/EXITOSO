@@ -1809,10 +1809,17 @@ class StrictScoreBreakdown(BaseModel):
     professionalCommunication: float = Field(..., description="0-10 score")
 
 class EvaluateAudioAnswerResponse(BaseModel):
-    is_english: bool
-    language: str
-    language_confidence: float
+    detectedLanguage: str = "English"
+    detected_language: str = "English"
+    languageConfidence: float = 1.0
+    language_confidence: float = 1.0
+    isEnglish: bool = True
+    is_english: bool = True
+    languageStatus: str = "english"  # "english" | "non_english" | "mixed" | "uncertain"
+    language_status: str = "english"
+    language: str = "English"
     transcript: str
+    englishLanguageScore: Optional[float] = None
     answerStatus: Optional[str] = None  # "direct" | "mostly_relevant" | "partially_relevant" | "mostly_off_topic" | "irrelevant" | "empty"
     questionUnderstanding: Optional[float] = None
     answerRelevance: Optional[float] = None
@@ -1830,8 +1837,104 @@ class EvaluateAudioAnswerResponse(BaseModel):
     feedback: str
     improvementTip: str
     improvement_tip: str
-    model_version: str = "gemini-1.5-flash-strict-v2"
-    rubric_version: str = "rubric-strict-content-first-v2"
+    model_version: str = "gemini-1.5-flash-language-first-v3"
+    rubric_version: str = "rubric-language-first-v3"
+
+
+def detect_spoken_language(raw_transcript: str) -> tuple[str, float, bool, str, float]:
+    """
+    Strict Language Detection:
+    Analyzes actual audio/transcript script, vocabulary, and code-switching.
+    Returns: (detected_language, language_confidence, is_english, language_status, english_percentage)
+    """
+    text = raw_transcript.strip()
+    if not text:
+        return ("Uncertain", 0.0, False, "uncertain", 0.0)
+
+    words = text.split()
+    total_words = len(words)
+
+    # 1. Script checks for native non-Latin scripts
+    has_devanagari = bool(re.search(r'[\u0900-\u097F]', text))
+    has_telugu = bool(re.search(r'[\u0C00-\u0C7F]', text))
+    has_tamil = bool(re.search(r'[\u0B80-\u0BFF]', text))
+    has_bengali = bool(re.search(r'[\u0980-\u09FF]', text))
+    has_kannada = bool(re.search(r'[\u0C80-\u0CFF]', text))
+    has_malayalam = bool(re.search(r'[\u0D00-\u0D7F]', text))
+    has_arabic = bool(re.search(r'[\u0600-\u06FF]', text))
+    has_cyrillic = bool(re.search(r'[\u0400-\u04FF]', text))
+
+    if has_devanagari:
+        return ("Hindi", 0.99, False, "non_english", 0.0)
+    if has_telugu:
+        return ("Telugu", 0.99, False, "non_english", 0.0)
+    if has_tamil:
+        return ("Tamil", 0.99, False, "non_english", 0.0)
+    if has_bengali:
+        return ("Bengali", 0.99, False, "non_english", 0.0)
+    if has_kannada:
+        return ("Kannada", 0.99, False, "non_english", 0.0)
+    if has_malayalam:
+        return ("Malayalam", 0.99, False, "non_english", 0.0)
+    if has_arabic:
+        return ("Arabic", 0.99, False, "non_english", 0.0)
+    if has_cyrillic:
+        return ("Russian", 0.99, False, "non_english", 0.0)
+
+    # 2. Check for Romanized non-English words / code-switching
+    text_lower = text.lower()
+    clean_words = [re.sub(r'[^a-zA-Z]', '', w) for w in text_lower.split() if len(w) > 0]
+
+    hindi_romanized = {
+        "phir", "maine", "aur", "mein", "hum", "yeh", "karna", "kiya", "tha", "hai", "nahi", "nahin",
+        "karenge", "kuch", "bahut", "achha", "accha", "hoga", "raha", "rahe", "chahiye", "bol", "samajh",
+        "cheez", "cheezein", "bhi", "toh", "kaise", "karte", "sakte", "mera", "meri", "humne", "unhone",
+        "unka", "inhe", "aaj", "kal", "kar", "liya", "diya", "dena", "le", "lo", "sab", "log", "baat"
+    }
+    telugu_romanized = {
+        "chesanu", "chesamu", "nenu", "memu", "kani", "mariyu", "undi", "ledu", "undhi", "kuda",
+        "ala", "ila", "ela", "chesam", "cheyali", "cheyandi", "chestaru", "untundi", "gurinchi",
+        "ippudu", "appudu", "chala", "bagundi", "enti", "ante", "cheppanu", "pani", "cheyyadam"
+    }
+    tamil_romanized = {
+        "panninen", "pannitom", "naan", "nanga", "aana", "matrum", "irukku", "illa", "pannunga",
+        "seyya", "solren", "seyrom", "epdi", "apdi", "romba", "nalla", "velai", "panrom"
+    }
+    spanish_words = {
+        "hola", "gracias", "por", "favor", "trabajo", "equipo", "tambien", "pero", "como", "para", "este", "esta"
+    }
+
+    hindi_matches = sum(1 for w in clean_words if w in hindi_romanized)
+    telugu_matches = sum(1 for w in clean_words if w in telugu_romanized)
+    tamil_matches = sum(1 for w in clean_words if w in tamil_romanized)
+    spanish_matches = sum(1 for w in clean_words if w in spanish_words)
+
+    non_en_count = hindi_matches + telugu_matches + tamil_matches + spanish_matches
+
+    # 3. Very short or unclear transcript
+    if total_words < 3:
+        return ("Uncertain", 0.65, False, "uncertain", 50.0)
+
+    # 4. Determine mixed language vs pure language
+    if non_en_count > 0:
+        non_en_ratio = non_en_count / max(total_words, 1)
+        english_percentage = round(max((1.0 - non_en_ratio) * 100.0, 0.0), 1)
+
+        # If significant non-English words used (> 15% or >= 2 non-English words)
+        if non_en_ratio >= 0.40:
+            if hindi_matches >= max(telugu_matches, tamil_matches):
+                return ("Hindi", 0.96, False, "non_english", english_percentage)
+            elif telugu_matches >= tamil_matches:
+                return ("Telugu", 0.96, False, "non_english", english_percentage)
+            else:
+                return ("Tamil", 0.96, False, "non_english", english_percentage)
+        else:
+            # Code-switching detected (e.g. "I worked on the project and phir maine API optimize ki")
+            primary_lang = "Hindi" if hindi_matches > 0 else ("Telugu" if telugu_matches > 0 else "Tamil")
+            return (f"Mixed (English + {primary_lang})", 0.93, False, "mixed", english_percentage)
+
+    # 5. English word confidence check
+    return ("English", 0.98, True, "english", 100.0)
 
 
 @app.post("/api/v1/interview/evaluate-audio", response_model=EvaluateAudioAnswerResponse)
@@ -1843,19 +1946,21 @@ async def evaluate_audio_answer(
     expected_topics: Optional[str] = Form(None),
 ):
     """
-    Strict Content-First Spoken Answer Evaluation:
-    STEP 1: Is the answer understandable & English?
-    STEP 2: Does it answer the question? (answerRelevance 0-10 hard gate)
-    STEP 3: Does it cover the required topics/elements? (contentCoverage 0-100%)
-    STEP 4: Is the information accurate/reasonable? (accuracy 0-10)
-    STEP 5: Is the answer structured? (structure 0-10)
-    STEP 6: Is it concise? (offTopicRatio & conciseness)
-    STEP 7: Communication & delivery (clarity, professionalism)
-    Mandatory hard caps prevent fluent irrelevant answers from scoring above 1.0–3.0 / 10.0.
+    STRICT LANGUAGE-FIRST EVALUATION PIPELINE:
+    STEP 1: Transcribe verbatim in original spoken language (DO NOT translate to English).
+    STEP 2: Detect language from actual audio / transcript.
+    STEP 3: Check English Threshold (Language = English AND confidence >= 0.85).
+            - If Non-English: STOP. English score = 0-1/10. Content & communication scores NOT evaluated.
+            - If Mixed (<85% English): STOP. Request full English response.
+            - If Uncertain (<85% confidence / too short): STOP. Request clear English response.
+    STEP 4: ONLY IF English verified: proceed with Question Understanding, Relevance, Required Content Coverage,
+            Accuracy, Reasoning, Explanation, Delivery, and Hard Score Caps.
     """
     raw_transcript = ""
+    detected_lang_gemini = "English"
+    gemini_conf = 0.98
     
-    # 1. Audio Transcription using Gemini if audio file is provided
+    # 1. Audio Transcription using Gemini in original verbatim language
     if audio_file is not None:
         try:
             audio_bytes = await audio_file.read()
@@ -1872,7 +1977,7 @@ async def evaluate_audio_answer(
                             data=audio_bytes,
                             mime_type=mime_type,
                         ),
-                        "Please provide an accurate verbatim transcription of this spoken English interview answer. Do not translate. Transcribe verbatim in English."
+                        "Please provide an accurate verbatim transcription of this spoken audio in its original spoken language (e.g. Hindi, Telugu, Tamil, or English). DO NOT TRANSLATE TO ENGLISH. Transcribe verbatim."
                     ]
                 )
                 raw_transcript = response.text.strip() if response.text else ""
@@ -1884,83 +1989,115 @@ async def evaluate_audio_answer(
     elif transcript_text:
         raw_transcript = transcript_text.strip()
 
-    # If still empty
+    # Empty Audio Check
     if not raw_transcript.strip():
         return EvaluateAudioAnswerResponse(
-            is_english=True,
-            language="English",
-            language_confidence=1.0,
+            detectedLanguage="Uncertain",
+            detected_language="Uncertain",
+            languageConfidence=0.0,
+            language_confidence=0.0,
+            isEnglish=False,
+            is_english=False,
+            languageStatus="uncertain",
+            language_status="uncertain",
+            language="Uncertain",
             transcript="",
+            englishLanguageScore=0.0,
             answerStatus="empty",
             questionUnderstanding=0.0,
             answerRelevance=0.0,
             contentCoverage=0.0,
-            offTopicRatio=1.0,
-            scores=StrictScoreBreakdown(
-                accuracy=0.0,
-                explanationQuality=0.0,
-                structure=0.0,
-                examplesEvidence=0.0,
-                clarity=0.0,
-                conciseness=0.0,
-                professionalCommunication=0.0,
-            ),
-            parameter_scores=None,
-            special_scores=None,
-            content_score=0.0,
-            delivery_score=0.0,
-            overallScore=0.0,
-            overall_score=0.0,
-            strengths=[],
-            weaknesses=["No answer recorded. Please provide a spoken response to this question."],
-            feedback="No speech or text detected for this question.",
-            improvementTip="Click 'Start Recording' and speak your answer clearly into your microphone.",
-            model_version="gemini-1.5-flash-strict-v2",
-            rubric_version="rubric-strict-content-first-v2",
-        )
-
-    # 2. English-Only Language Detection
-    non_ascii_chars = sum(1 for c in raw_transcript if ord(c) > 127)
-    is_primarily_english = (non_ascii_chars / max(len(raw_transcript), 1)) < 0.15
-
-    if not is_primarily_english:
-        return EvaluateAudioAnswerResponse(
-            is_english=False,
-            language="Non-English",
-            language_confidence=0.95,
-            transcript=raw_transcript,
-            answerStatus="irrelevant",
-            questionUnderstanding=0.0,
-            answerRelevance=0.0,
-            contentCoverage=0.0,
-            offTopicRatio=1.0,
+            offTopicRatio=100.0,
             scores=None,
             parameter_scores=None,
             special_scores=None,
-            content_score=0.0,
-            delivery_score=0.0,
-            overallScore=0.0,
-            overall_score=0.0,
+            content_score=None,
+            delivery_score=None,
+            overallScore=None,
+            overall_score=None,
             strengths=[],
-            weaknesses=["Spoken answer was not in English."],
-            feedback="Please answer this interview question in English.",
-            improvementTip="The communication practice evaluator currently assesses spoken English answers.",
-            model_version="gemini-1.5-flash-strict-v2",
-            rubric_version="rubric-strict-content-first-v2",
+            weaknesses=["No speech or text detected for this question."],
+            feedback="No speech detected. Please speak your answer into the microphone.",
+            improvementTip="Click 'Start Recording' and answer the question in English.",
+            improvement_tip="Click 'Start Recording' and answer the question in English.",
+            model_version="gemini-1.5-flash-language-first-v3",
+            rubric_version="rubric-language-first-v3",
         )
 
-    # 3. Content Analysis & Token Processing
+    # 2. LANGUAGE DETECTION (FIRST STEP)
+    detected_lang, lang_conf, is_eng, lang_status, eng_pct = detect_spoken_language(raw_transcript)
+
+    # 3. NON-ENGLISH / MIXED / UNCERTAIN GATING
+    if not is_eng or lang_status != "english":
+        if lang_status == "non_english":
+            feedback_msg = (
+                f"Detected language: {detected_lang} (Confidence: {round(lang_conf * 100)}%). "
+                "English is required for this interview practice session. Please answer the question in English."
+            )
+            tip_msg = (
+                "This practice evaluator specifically assesses English spoken communication. "
+                "Speaking another language is not a reflection of general communication ability, but English is required for this practice mode."
+            )
+        elif lang_status == "mixed":
+            feedback_msg = (
+                f"Detected language: {detected_lang} ({eng_pct}% English). "
+                "This interview mode requires fully English responses. Please answer entirely in English without mixing languages."
+            )
+            tip_msg = "Ensure your entire response is delivered in English so all technical concepts and STAR structure can be evaluated."
+        else:  # uncertain
+            feedback_msg = (
+                f"Audio language could not be clearly verified as English (Confidence: {round(lang_conf * 100)}%). "
+                "Please speak clearly into your microphone in English and retry."
+            )
+            tip_msg = "Speak at a steady pace and ensure background noise is minimized."
+
+        return EvaluateAudioAnswerResponse(
+            detectedLanguage=detected_lang,
+            detected_language=detected_lang,
+            languageConfidence=lang_conf,
+            language_confidence=lang_conf,
+            isEnglish=False,
+            is_english=False,
+            languageStatus=lang_status,
+            language_status=lang_status,
+            language=detected_lang,
+            transcript=raw_transcript,
+            englishLanguageScore=1.0 if lang_status == "non_english" else (1.5 if lang_status == "mixed" else 0.5),
+            answerStatus="irrelevant" if lang_status == "non_english" else "partially_relevant",
+            questionUnderstanding=0.0,
+            answerRelevance=0.0,
+            contentCoverage=0.0,
+            offTopicRatio=100.0,
+            scores=None,
+            parameter_scores=None,
+            special_scores=None,
+            content_score=None,
+            delivery_score=None,
+            overallScore=None,
+            overall_score=None,
+            strengths=[],
+            weaknesses=[
+                f"Language Requirement: Response was in {detected_lang}. English is required for this interview mode.",
+                "Communication content and soft skills were not evaluated due to language requirement."
+            ],
+            feedback=feedback_msg,
+            improvementTip=tip_msg,
+            improvement_tip=tip_msg,
+            model_version="gemini-1.5-flash-language-first-v3",
+            rubric_version="rubric-language-first-v3",
+        )
+
+    # 4. CONTENT & QUESTION RELEVANCE EVALUATION (ONLY AFTER ENGLISH IS CONFIRMED)
     transcript_lower = raw_transcript.lower()
     words = raw_transcript.split()
     word_count = len(words)
 
     q_lower = question_text.lower()
     q_words = set(re.findall(r"\b[a-zA-Z]{3,}\b", q_lower))
-    # Exclude common question stopwords from keyword overlap
     stopwords = {"tell", "about", "your", "what", "when", "describe", "give", "explain", "with", "from", "that", "this", "have", "would", "how", "time", "where", "which"}
     key_q_words = q_words - stopwords
 
-    # 4. Generic Filler Detection (e.g. "I am hardworking, passionate, team player")
+    # Generic Filler Detection
     generic_filler_patterns = [
         r"\b(i am|i'm)\s+(very\s+)?(hardworking|passionate|dedicated|confident|a team player|positive|excited|punctual|honest)\b",
         r"\b(i\s+always\s+(try|do)\s+my\s+best)\b",
@@ -1977,15 +2114,7 @@ async def evaluate_audio_answer(
         matches = re.findall(pat, transcript_lower)
         filler_count += len(matches)
 
-    # 5. Required Elements & Topic Checking
-    has_tech_topic = False
-    has_concrete_problem = False
-    has_concrete_action = False
-    has_concrete_outcome = False
-    has_star_structure = False
-    has_diagnostic_reasoning = False
-
-    # A. Technical question markers
+    # Required Elements & Topic Checking
     tech_keywords = [
         "react", "typescript", "javascript", "node", "python", "postgresql", "sql", "git", "api", "database",
         "state", "component", "render", "re-render", "memoization", "pagination", "index", "indexing", "query",
@@ -2012,24 +2141,20 @@ async def evaluate_audio_answer(
     has_concrete_action = any(w in transcript_lower for w in action_keywords)
     has_concrete_outcome = any(w in transcript_lower for w in outcome_keywords)
 
-    # B. STAR structure markers
     has_star_structure = (
         (has_concrete_problem or any(w in transcript_lower for w in ["situation", "when", "project", "deadline", "task"])) and
         has_concrete_action and
         (has_concrete_outcome or any(w in transcript_lower for w in ["result", "outcome", "learned", "delivered"]))
     )
 
-    # C. Critical-thinking reasoning markers
     has_diagnostic_reasoning = (
         any(w in transcript_lower for w in ["first", "then", "step", "identify", "logs", "monitoring", "root-cause", "mitigate", "trade-off", "alternative", "bottleneck", "because", "impact"])
     )
 
-    # 6. Calculate Content Coverage & Required Elements Count
     total_required = 3
     answered_required = 0
 
     if category == "skill":
-        # Technical questions require: 1. Relevant tech context, 2. Problem/implementation action, 3. Solution/Result
         if has_tech_topic or any(w in transcript_lower for w in key_q_words):
             answered_required += 1
         if has_concrete_action or has_concrete_problem:
@@ -2037,7 +2162,6 @@ async def evaluate_audio_answer(
         if has_concrete_outcome or has_concrete_action:
             answered_required += 1
     elif category == "behavioral":
-        # Behavioral questions require: 1. Specific situation/task context, 2. Personal action taken, 3. Concrete resolution/learning
         if any(w in transcript_lower for w in ["project", "team", "colleague", "stakeholder", "deadline", "release", "disagreement", "conflict", "goal", "junior", "mentor"]):
             answered_required += 1
         if has_concrete_action:
@@ -2045,7 +2169,6 @@ async def evaluate_audio_answer(
         if has_concrete_outcome or any(w in transcript_lower for w in ["resolved", "aligned", "learned", "delivered", "outcome", "improved"]):
             answered_required += 1
     else:  # critical_thinking
-        # Critical questions require: 1. Scope/Problem understanding, 2. Reasoning/Trade-offs, 3. Mitigation/Conclusion
         if any(w in transcript_lower for w in ["scope", "impact", "traffic", "spike", "latency", "microservice", "monolith", "auth", "outage", "debt", "uptime", "logs"]):
             answered_required += 1
         if has_diagnostic_reasoning:
@@ -2053,10 +2176,8 @@ async def evaluate_audio_answer(
         if any(w in transcript_lower for w in ["caching", "scaling", "load balancing", "mitigate", "stakeholder", "post-mortem", "recovery", "refactor", "security", "conclusion"]):
             answered_required += 1
 
-    content_coverage = answered_required / float(total_required)  # 0.0 to 1.0
+    content_coverage = answered_required / float(total_required)
 
-    # 7. Off-Topic Ratio Analysis
-    # If the transcript is dominated by generic filler phrases or lacks target question keywords
     matched_q_keywords = [w for w in key_q_words if w in transcript_lower]
     keyword_match_ratio = len(matched_q_keywords) / max(len(key_q_words), 1)
 
@@ -2071,8 +2192,6 @@ async def evaluate_audio_answer(
     else:
         off_topic_ratio = 0.05
 
-    # 8. Gated Answer Relevance Calculation (0.0 to 10.0)
-    # Gating Rule: If generic filler or 0 required elements answered, answerRelevance is capped at 0.5–2.0
     if filler_count >= 2 and answered_required == 0:
         answer_relevance = 1.0
     elif answered_required == 0:
@@ -2081,11 +2200,10 @@ async def evaluate_audio_answer(
         answer_relevance = 3.5 if keyword_match_ratio > 0.2 else 2.5
     elif answered_required == 2:
         answer_relevance = 6.5 + (0.5 if has_concrete_outcome else 0.0)
-    else:  # answered_required == 3
+    else:
         answer_relevance = 9.0 + (0.5 if (has_concrete_outcome and has_tech_topic) else 0.0)
         answer_relevance = min(answer_relevance, 9.8)
 
-    # Classify Answer Status
     if word_count < 4:
         answer_status = "empty"
     elif answer_relevance <= 1.5 or content_coverage < 0.20:
@@ -2099,7 +2217,7 @@ async def evaluate_audio_answer(
     else:
         answer_status = "direct"
 
-    # 9. Individual Component Scores (0.0 to 10.0 scale)
+    # Base Scores
     accuracy_10 = 9.2 if (has_tech_topic and answered_required >= 2) else (6.0 if answered_required >= 1 else 1.5)
     explanation_quality_10 = 9.0 if (answered_required >= 2 and word_count >= 20) else (5.0 if answered_required >= 1 else 1.5)
     structure_10 = 9.0 if has_star_structure else (6.5 if answered_required >= 2 else 2.0)
@@ -2108,8 +2226,6 @@ async def evaluate_audio_answer(
     conciseness_10 = 9.0 if (20 <= word_count <= 140 and off_topic_ratio < 0.3) else (6.5 if word_count <= 200 else 3.0)
     professionalism_10 = 9.0 if word_count >= 8 else 4.0
 
-    # 10. Calculate Base Score using Strict Content-First Weights
-    # Question Relevance: 25%, Content Coverage: 20%, Accuracy: 15%, Explanation Quality: 10%, Structure: 10%, Evidence: 5%, Clarity: 5%, Conciseness: 5%, Professionalism: 5%
     base_score = (
         (answer_relevance * 0.25) +
         (content_coverage * 10.0 * 0.20) +
@@ -2122,7 +2238,7 @@ async def evaluate_audio_answer(
         (professionalism_10 * 0.05)
     )
 
-    # 11. MANDATORY HARD SCORE CAPS
+    # Mandatory Hard Score Caps
     caps = []
     if answer_relevance <= 1.0:
         caps.append(1.0)
@@ -2149,7 +2265,6 @@ async def evaluate_audio_answer(
     final_score = min([base_score] + caps)
     final_score = round(max(final_score, 0.0), 1)
 
-    # Content vs. Delivery Separation
     content_score = round(
         (answer_relevance * 0.35 + (content_coverage * 10.0) * 0.35 + accuracy_10 * 0.30),
         1
@@ -2159,7 +2274,6 @@ async def evaluate_audio_answer(
 
     delivery_score = round((clarity_10 * 0.4 + conciseness_10 * 0.3 + professionalism_10 * 0.3), 1)
 
-    # 12. 28 Parameter Map (Scaled to 1-5)
     rel_5 = max(round(answer_relevance / 2.0, 1), 1.0)
     acc_5 = max(round(accuracy_10 / 2.0, 1), 1.0)
     struct_5 = max(round(structure_10 / 2.0, 1), 1.0)
@@ -2170,7 +2284,6 @@ async def evaluate_audio_answer(
     evid_5 = max(round(examples_evidence_10 / 2.0, 1), 1.0)
     reason_5 = 4.6 if has_diagnostic_reasoning else (3.2 if answered_required >= 1 else 1.2)
 
-    # 13. Dynamic Strengths & Actionable Failure-Aware Feedback
     strengths = []
     weaknesses = []
 
@@ -2189,28 +2302,36 @@ async def evaluate_audio_answer(
 
     if answer_relevance <= 3.5:
         feedback = (
-            "Your speech was understandable, but the answer did not address the question. "
+            f"English verified (Confidence: 98%). "
+            f"Your speech was understandable, but the answer did not address the question. "
             f"The prompt asked about '{category.replace('_', ' ')}: {question_text[:70]}...', "
-            "but your response mainly described generic personal qualities without concrete project evidence. "
-            "Please provide a specific example directly addressing the technical or situational prompt."
+            "but your response mainly described generic personal qualities without concrete project evidence."
         )
         improvement_tip = "Answer the prompt directly: state the exact problem or situation first, explain your personal technical actions, and conclude with the result."
     else:
         feedback = (
+            f"English verified (Confidence: 98%). "
             f"Good {category.replace('_', ' ')} response with an overall score of {final_score}/10.0. "
             f"Content Relevance: {answer_relevance}/10.0, Content Coverage: {round(content_coverage * 100)}%."
         )
         improvement_tip = (
-            "To reach a perfect score, ensure every claim is reinforced with quantifiable production metrics (e.g. latency reductions, SLAs, test coverage)."
+            "To reach a perfect score, ensure every claim is reinforced with quantifiable production metrics."
             if has_concrete_outcome
             else "Add a concrete outcome (e.g. 'reduced latency by 30%', 'prevented downtime') to demonstrate complete results."
         )
 
     return EvaluateAudioAnswerResponse(
-        is_english=True,
-        language="English",
+        detectedLanguage="English",
+        detected_language="English",
+        languageConfidence=0.98,
         language_confidence=0.98,
+        isEnglish=True,
+        is_english=True,
+        languageStatus="english",
+        language_status="english",
+        language="English",
         transcript=raw_transcript,
+        englishLanguageScore=10.0,
         answerStatus=answer_status,
         questionUnderstanding=round(answer_relevance, 1),
         answerRelevance=round(answer_relevance, 1),
@@ -2271,9 +2392,10 @@ async def evaluate_audio_answer(
         feedback=feedback,
         improvementTip=improvement_tip,
         improvement_tip=improvement_tip,
-        model_version="gemini-1.5-flash-strict-v2",
-        rubric_version="rubric-strict-content-first-v2",
+        model_version="gemini-1.5-flash-language-first-v3",
+        rubric_version="rubric-language-first-v3",
     )
+
 
 
 

@@ -443,11 +443,14 @@ export default function AudioInterviewPage() {
               question_text: currentQ.question_text,
               audio_path: audioStoragePath,
               transcript: result.transcript,
-              language: result.language,
-              language_confidence: result.language_confidence,
-              content_score: result.content_score || 8.0,
-              delivery_score: result.delivery_score || 8.0,
-              overall_score: result.overallScore ?? result.overall_score ?? 8.0,
+              detected_language: result.detectedLanguage || result.detected_language || result.language || 'English',
+              language: result.language || 'English',
+              language_confidence: result.languageConfidence ?? result.language_confidence ?? 1.0,
+              is_english: result.isEnglish ?? result.is_english ?? true,
+              language_status: result.languageStatus || result.language_status || 'english',
+              content_score: result.content_score || 0.0,
+              delivery_score: result.delivery_score || 0.0,
+              overall_score: result.overallScore ?? result.overall_score ?? (result.is_english ? 8.0 : 0.0),
               parameter_scores: result.parameter_scores,
               special_scores: result.special_scores,
               feedback: result.feedback,
@@ -892,7 +895,7 @@ export default function AudioInterviewPage() {
                 >
                   {isEvaluating ? (
                     <>
-                      <RefreshCw className="h-4 w-4 animate-spin" /> Evaluating Answer Content...
+                      <RefreshCw className="h-4 w-4 animate-spin" /> Detecting Language & Analyzing...
                     </>
                   ) : (
                     <>
@@ -908,53 +911,113 @@ export default function AudioInterviewPage() {
           <div className="space-y-6">
             {currentEvaluation ? (
               <Card className="p-6 border-white/10 space-y-4 animate-fade-in">
-                <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
-                  <div>
-                    <div className="mb-1">{getStatusBadge(currentEvaluation.answerStatus)}</div>
-                    <h4 className="text-2xl font-extrabold text-white">
-                      {currentEvaluation.overallScore ?? currentEvaluation.overall_score} <span className="text-xs text-neutral-500">/ 10.0</span>
-                    </h4>
-                  </div>
-                  <ScoreRing score={Math.round((currentEvaluation.overallScore ?? currentEvaluation.overall_score ?? 8.0) * 10)} size="sm" />
-                </div>
-
-                {/* Hard Score Cap Alert if Irrelevant */}
-                {(currentEvaluation.answerRelevance ?? 10) <= 3.5 && (
-                  <div className="p-3 rounded-xl bg-rose-950/70 border border-rose-500/40 text-[11px] text-rose-200 flex items-start gap-2">
-                    <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
-                    <div>
-                      <strong className="text-white block font-bold">Hard Score Cap Applied</strong>
-                      <span>The answer was off-topic or generic. Fluency and delivery cannot override missing question content.</span>
+                {/* 1. Language Verification Result First */}
+                {currentEvaluation.is_english && (currentEvaluation.languageStatus === 'english' || currentEvaluation.language_status === 'english' || !currentEvaluation.languageStatus) ? (
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <span className="text-emerald-300 font-bold">English detected ✓</span>
                     </div>
+                    <span className="text-neutral-400 text-[11px] font-mono">
+                      Confidence: {Math.round((currentEvaluation.languageConfidence ?? currentEvaluation.language_confidence ?? 0.98) * 100)}%
+                    </span>
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-2xl bg-amber-950/60 border border-amber-500/40 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="h-5 w-5 text-amber-400" />
+                        <strong className="text-amber-200 text-sm font-bold">
+                          {currentEvaluation.detectedLanguage || currentEvaluation.detected_language || currentEvaluation.language || 'Non-English'} Detected ✕
+                        </strong>
+                      </div>
+                      <Badge variant="warning">
+                        Confidence: {Math.round((currentEvaluation.languageConfidence ?? currentEvaluation.language_confidence ?? 0.95) * 100)}%
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-neutral-200 leading-relaxed">
+                      {currentEvaluation.feedback || 'English is required for this interview practice session. Please answer the question in English.'}
+                    </p>
+                    <div className="p-3 rounded-xl bg-black/40 border border-white/10 text-xs space-y-1.5">
+                      <div className="flex justify-between text-neutral-300 font-mono text-[11px]">
+                        <span>Language Requirement Score:</span>
+                        <span className="text-amber-400 font-bold">{currentEvaluation.englishLanguageScore ?? 1.0} / 10.0</span>
+                      </div>
+                      <div className="flex justify-between text-neutral-400 font-mono text-[11px]">
+                        <span>Communication Content Score:</span>
+                        <span className="text-neutral-500 italic">Not evaluated</span>
+                      </div>
+                      <div className="flex justify-between text-neutral-400 font-mono text-[11px]">
+                        <span>Final Interview Score:</span>
+                        <span className="text-neutral-500 italic">Not evaluated</span>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-neutral-400 italic">
+                      Note: Speaking another language is not a reflection of general communication ability, but this practice evaluator specifically assesses English spoken responses.
+                    </p>
+                    <Button
+                      onClick={() => { setAudioBlob(null); setAudioUrl(null); setTextAnswer(''); setCurrentEvaluation(null); }}
+                      variant="outline"
+                      size="sm"
+                      className="w-full gap-2 text-xs cursor-pointer text-amber-300 border-amber-500/40 hover:bg-amber-500/10 font-bold"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> Re-record Answer in English
+                    </Button>
                   </div>
                 )}
 
-                {/* Content-First Metrics */}
-                <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                  <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/10">
-                    <span className="text-[10px] text-rose-400 font-bold uppercase block">Relevance</span>
-                    <strong className="text-sm text-white">{currentEvaluation.answerRelevance ?? 8.0}/10</strong>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/10">
-                    <span className="text-[10px] text-orange-400 font-bold uppercase block">Coverage</span>
-                    <strong className="text-sm text-white">{currentEvaluation.contentCoverage ?? 100}%</strong>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/10">
-                    <span className="text-[10px] text-purple-400 font-bold uppercase block">Off-Topic</span>
-                    <strong className="text-sm text-white">{currentEvaluation.offTopicRatio ?? 0}%</strong>
-                  </div>
-                </div>
+                {/* Score Header (Only if English) */}
+                {currentEvaluation.is_english && (
+                  <>
+                    <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
+                      <div>
+                        <div className="mb-1">{getStatusBadge(currentEvaluation.answerStatus)}</div>
+                        <h4 className="text-2xl font-extrabold text-white">
+                          {currentEvaluation.overallScore ?? currentEvaluation.overall_score} <span className="text-xs text-neutral-500">/ 10.0</span>
+                        </h4>
+                      </div>
+                      <ScoreRing score={Math.round((currentEvaluation.overallScore ?? currentEvaluation.overall_score ?? 8.0) * 10)} size="sm" />
+                    </div>
 
-                {/* Strict Base Scores Breakdown */}
-                {currentEvaluation.scores && (
-                  <div className="space-y-2 text-xs">
-                    <ScoreBar label="Question Relevance (25%)" score={Math.round((currentEvaluation.answerRelevance ?? 8.0) * 10)} />
-                    <ScoreBar label="Content Coverage (20%)" score={Math.round(currentEvaluation.contentCoverage ?? 100)} />
-                    <ScoreBar label="Technical Accuracy (15%)" score={Math.round(currentEvaluation.scores.accuracy * 10)} />
-                    <ScoreBar label="Explanation Quality (10%)" score={Math.round(currentEvaluation.scores.explanationQuality * 10)} />
-                    <ScoreBar label="Structure & STAR (10%)" score={Math.round(currentEvaluation.scores.structure * 10)} />
-                    <ScoreBar label="Examples & Evidence (5%)" score={Math.round(currentEvaluation.scores.examplesEvidence * 10)} />
-                  </div>
+                    {/* Hard Score Cap Alert if Irrelevant */}
+                    {(currentEvaluation.answerRelevance ?? 10) <= 3.5 && (
+                      <div className="p-3 rounded-xl bg-rose-950/70 border border-rose-500/40 text-[11px] text-rose-200 flex items-start gap-2">
+                        <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+                        <div>
+                          <strong className="text-white block font-bold">Hard Score Cap Applied</strong>
+                          <span>The answer was off-topic or generic. Fluency and delivery cannot override missing question content.</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Content-First Metrics */}
+                    <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                      <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/10">
+                        <span className="text-[10px] text-rose-400 font-bold uppercase block">Relevance</span>
+                        <strong className="text-sm text-white">{currentEvaluation.answerRelevance ?? 8.0}/10</strong>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/10">
+                        <span className="text-[10px] text-orange-400 font-bold uppercase block">Coverage</span>
+                        <strong className="text-sm text-white">{currentEvaluation.contentCoverage ?? 100}%</strong>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/10">
+                        <span className="text-[10px] text-purple-400 font-bold uppercase block">Off-Topic</span>
+                        <strong className="text-sm text-white">{currentEvaluation.offTopicRatio ?? 0}%</strong>
+                      </div>
+                    </div>
+
+                    {/* Strict Base Scores Breakdown */}
+                    {currentEvaluation.scores && (
+                      <div className="space-y-2 text-xs">
+                        <ScoreBar label="Question Relevance (25%)" score={Math.round((currentEvaluation.answerRelevance ?? 8.0) * 10)} />
+                        <ScoreBar label="Content Coverage (20%)" score={Math.round(currentEvaluation.contentCoverage ?? 100)} />
+                        <ScoreBar label="Technical Accuracy (15%)" score={Math.round(currentEvaluation.scores.accuracy * 10)} />
+                        <ScoreBar label="Explanation Quality (10%)" score={Math.round(currentEvaluation.scores.explanationQuality * 10)} />
+                        <ScoreBar label="Structure & STAR (10%)" score={Math.round(currentEvaluation.scores.structure * 10)} />
+                        <ScoreBar label="Examples & Evidence (5%)" score={Math.round(currentEvaluation.scores.examplesEvidence * 10)} />
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {/* Toggle All 28 Parameters */}

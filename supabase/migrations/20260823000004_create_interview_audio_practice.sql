@@ -39,8 +39,11 @@ CREATE TABLE IF NOT EXISTS public.interview_practice_answers (
     question_text TEXT NOT NULL,
     audio_path TEXT,
     transcript TEXT,
+    detected_language TEXT DEFAULT 'English',
     language TEXT DEFAULT 'English',
     language_confidence NUMERIC(3,2) DEFAULT 1.0,
+    is_english BOOLEAN DEFAULT true,
+    language_status TEXT DEFAULT 'english', -- 'english' | 'non_english' | 'mixed' | 'uncertain'
     content_score NUMERIC(3,1) DEFAULT 0.0,
     delivery_score NUMERIC(3,1) DEFAULT 0.0,
     overall_score NUMERIC(3,1) DEFAULT 0.0,
