@@ -79,9 +79,51 @@ export default function AudioInterviewPage() {
   const [isSessionComplete, setIsSessionComplete] = useState<boolean>(false)
   const [hasConsented, setHasConsented] = useState<boolean>(false)
 
+  // Audio-Reactive Visualizer State & Web Audio Nodes
+  const [audioLevel, setAudioLevel] = useState<number>(0)
+  const [equalizerHeights, setEqualizerHeights] = useState<number[]>([20, 20, 20, 20, 20])
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const analyserRef = useRef<AnalyserNode | null>(null)
+  const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null)
+  const animFrameRef = useRef<number | null>(null)
+  const currentStreamRef = useRef<MediaStream | null>(null)
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const timerIntervalRef = useRef<any>(null)
+
+  // Cleanup Web Audio API Resources
+  const cleanupAudioVisualizer = () => {
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current)
+      animFrameRef.current = null
+    }
+    if (sourceNodeRef.current) {
+      sourceNodeRef.current.disconnect()
+      sourceNodeRef.current = null
+    }
+    if (analyserRef.current) {
+      analyserRef.current.disconnect()
+      analyserRef.current = null
+    }
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      audioContextRef.current.close().catch(() => {})
+      audioContextRef.current = null
+    }
+    if (currentStreamRef.current) {
+      currentStreamRef.current.getTracks().forEach((t) => t.stop())
+      currentStreamRef.current = null
+    }
+    setAudioLevel(0)
+    setEqualizerHeights([20, 20, 20, 20, 20])
+  }
+
+  // Ensure cleanup on unmount
+  useEffect(() => {
+    return () => {
+      cleanupAudioVisualizer()
+    }
+  }, [])
 
   // 1. Fetch Candidate Profile from Supabase
   useEffect(() => {
@@ -177,12 +219,16 @@ export default function AudioInterviewPage() {
     }
   }, [isRecording])
 
-  // Start Microphone Recording
+  // Start Microphone Recording with Real-Time Audio Reactivity
   const startRecording = async () => {
     setErrorMessage('')
     setIsEnglishWarning(false)
+    cleanupAudioVisualizer()
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      currentStreamRef.current = stream
+
       let mimeType = 'audio/webm'
       if (!MediaRecorder.isTypeSupported('audio/webm')) {
         mimeType = MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : ''
@@ -202,14 +248,64 @@ export default function AudioInterviewPage() {
         const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || 'audio/webm' })
         setAudioBlob(audioBlob)
         setAudioUrl(URL.createObjectURL(audioBlob))
-        stream.getTracks().forEach((track) => track.stop())
+        cleanupAudioVisualizer()
+      }
+
+      // Initialize Web Audio API Analyser for real-time volume reactivity
+      try {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+        const audioCtx = new AudioCtx()
+        audioContextRef.current = audioCtx
+
+        const analyser = audioCtx.createAnalyser()
+        analyser.fftSize = 64
+        analyser.smoothingTimeConstant = 0.75
+        analyserRef.current = analyser
+
+        const source = audioCtx.createMediaStreamSource(stream)
+        source.connect(analyser)
+        sourceNodeRef.current = source
+
+        const bufferLength = analyser.frequencyBinCount
+        const dataArray = new Uint8Array(bufferLength)
+
+        const updateAudioMetrics = () => {
+          if (!analyserRef.current) return
+
+          analyserRef.current.getByteFrequencyData(dataArray)
+
+          // Calculate overall RMS audio energy
+          let sum = 0
+          for (let i = 0; i < bufferLength; i++) {
+            sum += dataArray[i]
+          }
+          const avg = sum / bufferLength
+          const normalized = Math.min(avg / 110.0, 1.0)
+
+          setAudioLevel((prev) => prev * 0.65 + normalized * 0.35)
+
+          // Extract 5 frequency bands for live equalizer
+          const b1 = Math.max(15, (dataArray[1] / 255) * 100)
+          const b2 = Math.max(15, (dataArray[3] / 255) * 100)
+          const b3 = Math.max(15, (dataArray[6] / 255) * 100)
+          const b4 = Math.max(15, (dataArray[10] / 255) * 100)
+          const b5 = Math.max(15, (dataArray[14] / 255) * 100)
+          setEqualizerHeights([b1, b2, b3, b4, b5])
+
+          animFrameRef.current = requestAnimationFrame(updateAudioMetrics)
+        }
+
+        animFrameRef.current = requestAnimationFrame(updateAudioMetrics)
+      } catch (audioCtxErr) {
+        console.warn('[Web Audio Context Warning]', audioCtxErr)
       }
 
       mediaRecorder.start(250)
       setIsRecording(true)
     } catch (err) {
       console.error('[Microphone Permission Error]', err)
-      setErrorMessage('Microphone access is required for audio interview practice. Please allow microphone access.')
+      cleanupAudioVisualizer()
+      setErrorMessage('Microphone access is required to record your answer. Please allow microphone access in your browser.')
     }
   }
 
@@ -218,6 +314,7 @@ export default function AudioInterviewPage() {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop()
       setIsRecording(false)
+      cleanupAudioVisualizer()
     }
   }
 
@@ -544,37 +641,105 @@ export default function AudioInterviewPage() {
                 </div>
               )}
 
-              {/* Interactive Audio Recording Controls */}
-              <div className="p-6 rounded-2xl bg-neutral-900 border border-white/10 text-center space-y-4">
-                {isRecording ? (
-                  <div className="space-y-3 animate-pulse">
-                    <div className="w-16 h-16 rounded-full bg-rose-500/20 border-2 border-rose-500 text-rose-400 flex items-center justify-center mx-auto shadow-[0_0_30px_rgba(255,0,94,0.5)]">
-                      <Mic className="h-8 w-8 text-rose-400 animate-bounce" />
+              {/* Real-Time Audio-Reactive Recording Controls */}
+              <div
+                className="p-6 rounded-2xl bg-neutral-900 border border-white/10 text-center space-y-4 relative overflow-hidden"
+                role="region"
+                aria-label={isRecording ? 'Recording audio active' : 'Audio interview recorder'}
+              >
+                {isEvaluating ? (
+                  /* State 3: PROCESSING / ANALYZING */
+                  <div className="space-y-3 py-4 animate-fade-in">
+                    <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
+                      <div className="absolute inset-0 rounded-full border-2 border-orange-500/30 animate-ping" />
+                      <div className="w-16 h-16 rounded-full bg-orange-500/10 border border-orange-500/40 flex items-center justify-center text-orange-400 shadow-[0_0_30px_rgba(249,115,22,0.3)]">
+                        <RefreshCw className="h-7 w-7 text-orange-400 animate-spin" />
+                      </div>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-rose-400 font-extrabold text-sm tracking-wider uppercase">
-                        Recording in English...
+                      <p className="text-orange-400 font-extrabold text-sm tracking-wider uppercase">
+                        Analyzing Spoken Answer...
                       </p>
+                      <p className="text-xs text-neutral-400">
+                        Transcribing English speech and calculating 8-factor communication scores.
+                      </p>
+                    </div>
+                  </div>
+                ) : isRecording ? (
+                  /* State 2: RECORDING (Audio-Reactive Web Audio API Animation) */
+                  <div className="space-y-4 py-2 animate-fade-in" aria-live="polite">
+                    {/* Pulsing Audio-Reactive Microphone Rings */}
+                    <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
+                      {/* Outer Ripple Ring 1 */}
+                      <div
+                        className="absolute inset-0 rounded-full border border-rose-500/30 bg-rose-500/10 transition-transform duration-75 ease-out"
+                        style={{
+                          transform: `scale(${1.0 + audioLevel * 0.45})`,
+                          opacity: 0.5 + audioLevel * 0.5,
+                        }}
+                      />
+                      {/* Outer Ripple Ring 2 */}
+                      <div
+                        className="absolute inset-1 rounded-full border border-orange-500/40 transition-transform duration-75 ease-out"
+                        style={{
+                          transform: `scale(${1.0 + audioLevel * 0.25})`,
+                          opacity: 0.6 + audioLevel * 0.4,
+                        }}
+                      />
+                      {/* Center Audio-Reactive Badge */}
+                      <div
+                        className="w-14 h-14 rounded-full bg-gradient-to-tr from-rose-600 to-orange-500 flex items-center justify-center text-white z-10 transition-all duration-75 ease-out"
+                        style={{
+                          transform: `scale(${1.0 + audioLevel * 0.18})`,
+                          boxShadow: `0 0 ${20 + audioLevel * 45}px rgba(255, 0, 94, ${0.5 + audioLevel * 0.5})`,
+                        }}
+                      >
+                        <Mic className="h-7 w-7 text-white" />
+                      </div>
+                    </div>
+
+                    {/* Live 5-Bar Voice Equalizer */}
+                    <div className="flex items-end justify-center gap-1.5 h-7">
+                      {equalizerHeights.map((height, i) => (
+                        <div
+                          key={i}
+                          className="w-1.5 rounded-full bg-gradient-to-t from-rose-500 to-orange-400 transition-all duration-75 ease-out"
+                          style={{
+                            height: `${height}%`,
+                            opacity: 0.6 + (height / 100) * 0.4,
+                          }}
+                        />
+                      ))}
+                    </div>
+
+                    {/* Status & Timer */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-center gap-2 text-rose-400 font-extrabold text-xs tracking-wider uppercase">
+                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
+                        <span>Recording in English...</span>
+                      </div>
                       <p className="text-2xl font-mono font-bold text-white">{formatTime(recordingSeconds)}</p>
                     </div>
+
                     <Button
                       size="sm"
                       onClick={stopRecording}
-                      className="bg-rose-600 hover:bg-rose-700 text-white gap-2 cursor-pointer text-xs"
+                      className="bg-rose-600 hover:bg-rose-700 text-white gap-2 cursor-pointer text-xs font-bold shadow-[0_0_20px_rgba(255,0,94,0.4)]"
                     >
                       <Square className="h-4 w-4" /> Stop Recording
                     </Button>
                   </div>
                 ) : (
+                  /* State 1 & 4: IDLE / COMPLETED */
                   <div className="space-y-3">
-                    <div className="w-16 h-16 rounded-full bg-white/[0.04] border border-white/10 text-neutral-400 flex items-center justify-center mx-auto">
+                    <div className="w-16 h-16 rounded-full bg-white/[0.04] border border-white/10 text-neutral-400 flex items-center justify-center mx-auto hover:border-orange-500/50 hover:bg-white/[0.08] transition-all">
                       <Mic className="h-8 w-8 text-orange-400" />
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs text-neutral-300 font-semibold">Speak your answer clearly into your microphone</p>
                       <p className="text-[11px] text-neutral-500">Record a 30–90 second answer covering the situation, actions, and results.</p>
                     </div>
-                    <div className="flex items-center justify-center gap-3">
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                       <Button
                         size="sm"
                         onClick={startRecording}
@@ -583,7 +748,9 @@ export default function AudioInterviewPage() {
                         <Mic className="h-4 w-4 text-orange-400" /> Start Recording
                       </Button>
                       {audioUrl && (
-                        <audio src={audioUrl} controls className="h-9 max-w-xs" />
+                        <div className="flex items-center gap-2 p-1.5 rounded-xl bg-white/[0.03] border border-white/[0.08]">
+                          <audio src={audioUrl} controls className="h-8 max-w-xs" />
+                        </div>
                       )}
                     </div>
                   </div>
