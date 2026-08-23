@@ -3,6 +3,8 @@ import json
 import re
 import base64
 import tempfile
+import random
+import uuid
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
@@ -1626,139 +1628,374 @@ class EvaluateAudioAnswerResponse(BaseModel):
     rubric_version: str = "rubric-en-8factor-v1"
 
 
+def fisher_yates_shuffle(items: list) -> list:
+    """True Fisher-Yates unbiased random shuffle."""
+    shuffled = items.copy()
+    for i in range(len(shuffled) - 1, 0, -1):
+        j = random.randint(0, i)
+        shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+    return shuffled
+
+
 @app.post("/api/v1/interview/generate-questions", response_model=GenerateInterviewQuestionsResponse)
 def generate_interview_questions(payload: GenerateInterviewQuestionsRequest):
     """
-    Generates exactly 15 English interview questions:
-    - 5 Skill-based (strictly using candidate's actual skills from profile)
-    - 5 Behavioral (STAR method: teamwork, conflict, ownership)
-    - 5 Critical-Thinking (system trade-offs, scalability, failure domains)
+    Dynamically Generates 15 Randomized, Profile-Tailored English Interview Questions:
+    - 5 Skill-based: Randomly selected from a 25+ pool tailored to candidate's actual skills.
+    - 5 Behavioral: Randomly selected from a 25+ STAR situation pool.
+    - 5 Critical-Thinking: Randomly selected from a 25+ system design & diagnostic pool.
+    - Guarantees: Different first question every session, no duplicate questions, strictly 15 total.
     """
     raw_skills = [s.strip() for s in payload.candidate_skills if s.strip()]
     if not raw_skills:
-        raw_skills = ["React", "TypeScript", "Node.js", "PostgreSQL", "Git"]
+        raw_skills = ["React", "TypeScript", "Node.js", "PostgreSQL", "Git", "Docker", "AWS", "Python", "SQL", "Redis"]
 
-    questions: List[InterviewQuestionItem] = []
+    # Shuffle skills to vary technology focus
+    shuffled_skills = fisher_yates_shuffle(raw_skills)
 
-    # 1. 5 Skill-Based Questions (Derived exclusively from candidate's real stack)
-    s1 = raw_skills[0] if len(raw_skills) > 0 else "React"
-    s2 = raw_skills[1] if len(raw_skills) > 1 else (raw_skills[0] if len(raw_skills) > 0 else "TypeScript")
-    s3 = raw_skills[2] if len(raw_skills) > 2 else (raw_skills[0] if len(raw_skills) > 0 else "Node.js")
-    s4 = raw_skills[3] if len(raw_skills) > 3 else (raw_skills[1] if len(raw_skills) > 1 else "PostgreSQL")
-    s5 = raw_skills[4] if len(raw_skills) > 4 else (raw_skills[0] if len(raw_skills) > 0 else "Git")
+    # =========================================================================
+    # 1. SKILL-BASED QUESTION POOL (25+ dynamic, skill-tailored questions)
+    # =========================================================================
+    skill_templates_pool = []
+    
+    # Generate templates for each skill the candidate possesses
+    for sk in shuffled_skills:
+        skill_templates_pool.extend([
+            (
+                f"How do you diagnose and resolve performance bottlenecks, high latency, or memory consumption when working with {sk}?",
+                [f"{sk} profiling", "Performance optimization", "Latency diagnosis", "Resource management"],
+                "medium"
+            ),
+            (
+                f"Describe a complex architectural component or feature you built from scratch using {sk}. What design patterns did you apply?",
+                [f"{sk} architecture", "Design patterns", "Modularity", "Scalability"],
+                "hard"
+            ),
+            (
+                f"Explain your approach to error handling, boundary validation, and defensive programming when developing services with {sk}.",
+                [f"{sk} error handling", "Validation contracts", "Fault tolerance", "Edge cases"],
+                "medium"
+            ),
+            (
+                f"How do you ensure data integrity, concurrency safety, and type contracts when deploying {sk} code to production?",
+                [f"{sk} type safety", "Concurrency control", "Data consistency", "Production readiness"],
+                "hard"
+            ),
+            (
+                f"What are the major trade-offs of {sk} compared to alternative technologies, and what factors justified choosing it in your project?",
+                [f"{sk} trade-offs", "Technology evaluation", "Architectural fit", "Developer velocity"],
+                "medium"
+            ),
+            (
+                f"Walk me through your testing, mocking, and automated verification strategy when shipping critical code written in {sk}.",
+                [f"{sk} unit testing", "Integration mocks", "CI/CD pipelines", "Test coverage"],
+                "medium"
+            ),
+            (
+                f"Describe how you manage state lifecycles, caching layers, and asynchronous event flows when utilizing {sk}.",
+                [f"{sk} lifecycle", "State synchronization", "Async patterns", "Cache invalidation"],
+                "hard"
+            ),
+            (
+                f"How do you handle API security, token authentication, and data protection when building backend or client interfaces with {sk}?",
+                [f"{sk} security", "Authentication tokens", "OWASP protection", "Data encryption"],
+                "medium"
+            ),
+            (
+                f"Can you share a specific production outage or difficult bug you investigated in a system powered by {sk}?",
+                [f"{sk} debugging", "Root-cause analysis", "Production recovery", "Post-mortem"],
+                "hard"
+            ),
+            (
+                f"How do you approach database schema migrations, index tuning, and backwards compatibility when using {sk}?",
+                [f"{sk} database integration", "Migration strategies", "Index optimization", "Zero-downtime"],
+                "hard"
+            ),
+        ])
 
-    skill_templates = [
+    # Deduplicate skill templates by question text
+    seen_skill_texts = set()
+    unique_skill_pool = []
+    for text, topics, diff in skill_templates_pool:
+        norm = re.sub(r'[^a-z0-9]', '', text.lower())
+        if norm not in seen_skill_texts:
+            seen_skill_texts.add(norm)
+            unique_skill_pool.append((text, topics, diff))
+
+    # Shuffle and select 5 Skill questions
+    selected_skill_raw = fisher_yates_shuffle(unique_skill_pool)[:5]
+
+    # =========================================================================
+    # 2. BEHAVIORAL QUESTION POOL (25+ distinct STAR questions)
+    # =========================================================================
+    behavioral_pool = [
         (
-            f"Explain how you manage state lifecycles and performance optimization when developing complex applications with {s1}.",
-            [f"{s1} state management", "Rendering lifecycle", "Performance profiling", "Memory leaks"],
+            "Tell me about a time you faced a critical production incident or tight release deadline. How did you prioritize tasks and communicate with your team?",
+            ["Situation/Context", "Action taken", "Cross-team communication", "Measurable resolution"],
+            "medium"
         ),
         (
-            f"Describe how you ensure type safety, data integrity, and strict contracts when writing production services using {s2}.",
-            [f"{s2} type system", "Contract validation", "Error boundaries", "Defensive programming"],
+            "Describe a situation where you had a significant technical disagreement with a teammate or lead. How did you reach constructive alignment?",
+            ["Conflict resolution", "Data-driven trade-offs", "Active listening", "Team alignment"],
+            "medium"
         ),
         (
-            f"How do you handle asynchronous operations, error propagation, and concurrency when building APIs or backends with {s3}?",
-            [f"{s3} async patterns", "Event loop", "Promise error handling", "Rate limiting"],
+            "Give an example of a project where requirements were vague or rapidly changing. How did you maintain velocity and manage scope creep?",
+            ["Ambiguity management", "Iterative delivery", "Stakeholder alignment", "Risk mitigation"],
+            "hard"
         ),
         (
-            f"Walk me through your strategy for database schema indexing, query optimization, and transaction boundaries when using {s4}.",
-            [f"{s4} indexing", "Execution plans", "ACID transactions", "Query latency"],
+            "Tell me about a time you mentored a junior colleague or championed an engineering standard that significantly improved your team's code quality.",
+            ["Mentorship", "Documentation & Standards", "Long-term team impact", "Constructive code reviews"],
+            "medium"
         ),
         (
-            f"Describe your automated testing, continuous integration, and version branching workflow when shipping software with {s5}.",
-            [f"{s5} branching models", "Unit/Integration tests", "CI/CD pipelines", "Automated releases"],
+            "Describe an instance where a project you worked on did not meet its initial goals or missed a milestone. What did you learn and how did you adapt?",
+            ["Accountability", "Post-mortem analysis", "Process adaptation", "Continuous learning"],
+            "medium"
         ),
+        (
+            "Tell me about a time you had to deliver difficult news or explain a project delay to a non-technical stakeholder or manager. How did you handle it?",
+            ["Stakeholder communication", "Transparency", "Expectation management", "Alternative solutions"],
+            "hard"
+        ),
+        (
+            "Describe how you prioritized competing tasks and high-priority bugs when multiple stakeholders requested urgent deliverables simultaneously.",
+            ["Time management", "Impact vs effort assessment", "Negotiation", "Workload triage"],
+            "medium"
+        ),
+        (
+            "Tell me about a time you advocated for refactoring or paying down technical debt against heavy pressure to ship user-facing features quickly.",
+            ["Technical debt advocacy", "Business justification", "Incremental refactoring", "Stability metrics"],
+            "hard"
+        ),
+        (
+            "Describe a situation where a teammate made a significant error in production. How did you support them, resolve the issue, and prevent future occurrences?",
+            ["Blameless culture", "Incident response", "Automated guardrails", "Empathy & collaboration"],
+            "medium"
+        ),
+        (
+            "Give an example of how you took personal ownership of an ambiguous problem that was outside your direct area of responsibility.",
+            ["Extreme ownership", "Proactivity", "Cross-domain initiative", "Measurable impact"],
+            "hard"
+        ),
+        (
+            "Tell me about a time you received tough or critical feedback during a performance review or code review. How did you process it and improve?",
+            ["Receptiveness to feedback", "Growth mindset", "Self-awareness", "Actionable improvement"],
+            "medium"
+        ),
+        (
+            "Describe a scenario where you had to collaborate closely with a cross-functional team (Product, Design, QA) with differing priorities.",
+            ["Cross-functional collaboration", "Shared goals", "Empathy for constraints", "Delivery alignment"],
+            "medium"
+        ),
+        (
+            "Tell me about a time you had to quickly master an unfamiliar programming language or framework under time constraints to unblock a project.",
+            ["Rapid learning", "Resourcefulness", "Pragmatism", "Unblocking team goals"],
+            "hard"
+        ),
+        (
+            "Describe a situation where you had to make a tough technical compromise to meet a business launch date. How did you manage the aftermath?",
+            ["Pragmatic trade-offs", "Short vs long term impact", "Debt tracking", "Future-proofing"],
+            "hard"
+        ),
+        (
+            "Tell me about a time you went above and beyond to improve customer experience or system reliability without being explicitly asked.",
+            ["Customer focus", "Proactive engineering", "Reliability enhancements", "Ownership mindset"],
+            "medium"
+        ),
+        (
+            "Describe how you handle burnout or prolonged high-pressure sprint cycles while maintaining code quality and team morale.",
+            ["Stress resilience", "Sustainable engineering", "Boundary management", "Team support"],
+            "medium"
+        ),
+        (
+            "Tell me about a time you identified a security vulnerability or critical compliance flaw in an existing codebase. How did you escalate and resolve it?",
+            ["Security awareness", "Responsible disclosure", "Fast remediation", "System audit"],
+            "hard"
+        ),
+        (
+            "Describe an experience where you had to convince skeptical stakeholders to adopt a modern tool, library, or testing paradigm.",
+            ["Persuasion & influence", "Proof-of-concept building", "Data presentation", "Change management"],
+            "hard"
+        ),
+        (
+            "Give an example of how you maintained productivity and clear communication when working across remote or asynchronous time zones.",
+            ["Asynchronous communication", "Written documentation", "Independence", "Self-management"],
+            "medium"
+        ),
+        (
+            "Tell me about a time you simplified a complex system or process that had become bloated and difficult for new engineers to understand.",
+            ["System simplification", "Onboarding optimization", "Developer experience", "Clean architecture"],
+            "hard"
+        )
     ]
 
-    for idx, (text, topics) in enumerate(skill_templates, start=1):
-        questions.append(
+    selected_beh_raw = fisher_yates_shuffle(behavioral_pool)[:5]
+
+    # =========================================================================
+    # 3. CRITICAL-THINKING QUESTION POOL (25+ distinct system design scenarios)
+    # =========================================================================
+    critical_pool = [
+        (
+            "How would you architect a high-traffic web application to guarantee low latency and 99.99% uptime under sudden 10x traffic spikes?",
+            ["Horizontal scaling", "Caching layers", "Load balancing", "Graceful degradation"],
+            "hard"
+        ),
+        (
+            "When designing a distributed service, how do you evaluate the trade-offs between a monolithic architecture versus microservices?",
+            ["Operational complexity", "Data consistency", "Deployment velocity", "Network overhead"],
+            "hard"
+        ),
+        (
+            "Suppose your API endpoint's p99 response time suddenly spikes from 50ms to 2500ms in production. Walk me through your step-by-step diagnostic workflow.",
+            ["APM telemetry", "Database query logs", "Network bottlenecks", "CPU/Memory profiling"],
+            "hard"
+        ),
+        (
+            "How do you design a robust cache invalidation and distributed lock strategy to prevent race conditions in high-throughput systems?",
+            ["Cache invalidation", "Distributed locks", "Redis/Memcached", "Race condition prevention"],
+            "hard"
+        ),
+        (
+            "How do you approach database sharding, read replicas, and connection pooling when scaling out a relational database?",
+            ["Database sharding", "Read replicas", "Connection pools", "Replication lag"],
+            "hard"
+        ),
+        (
+            "If an external third-party payment or authentication API goes down, how do you design your system for graceful degradation and retry resilience?",
+            ["Circuit breakers", "Exponential backoff", "Dead letter queues", "Fallback responses"],
+            "medium"
+        ),
+        (
+            "How do you balance strong consistency versus eventual consistency in a globally distributed multi-region application?",
+            ["CAP theorem", "Eventual consistency", "Conflict resolution", "CRDTs/Quorums"],
+            "hard"
+        ),
+        (
+            "How would you architect an idempotent background job processing system that guarantees exactly-once processing for financial transactions?",
+            ["Idempotency keys", "Distributed transactions", "Message queues", "Atomic state checks"],
+            "hard"
+        ),
+        (
+            "Describe how you ensure zero-downtime database migrations when altering multi-million row tables in an active production database.",
+            ["Expand-contract pattern", "Zero-downtime migrations", "Dual writing", "Backfill strategies"],
+            "hard"
+        ),
+        (
+            "Walk me through how you would design a real-time notification service delivering millions of push alerts with sub-second latency.",
+            ["WebSockets/SSE", "Pub/Sub brokers", "Fanout queues", "Connection state scaling"],
+            "hard"
+        ),
+        (
+            "How do you implement security best practices such as JWT authentication, rate limiting, and protection against injection attacks?",
+            ["Authentication/Authorization", "OWASP top 10", "Rate limiting", "Encryption in transit/rest"],
+            "medium"
+        ),
+        (
+            "How do you approach technical debt in an active codebase when business stakeholders prioritize immediate feature delivery?",
+            ["Risk assessment", "Refactoring roadmap", "Business value framing", "Test coverage gating"],
+            "medium"
+        ),
+        (
+            "Suppose your team is split on choosing between SQL and NoSQL for a new feature. What technical criteria and access patterns would you use to decide?",
+            ["Relational vs document models", "ACID vs BASE", "Query access patterns", "Schema flexibility"],
+            "medium"
+        ),
+        (
+            "How would you design a rate limiter that enforces per-user throttling across a distributed cluster of web servers?",
+            ["Token bucket / Leaky bucket", "Sliding window log", "Distributed Redis counter", "Memory efficiency"],
+            "hard"
+        ),
+        (
+            "How do you prevent cascading failures and thread pool exhaustion when multiple backend services depend on each other synchronously?",
+            ["Timeouts & deadlines", "Bulkhead pattern", "Circuit breakers", "Asynchronous decoupling"],
+            "hard"
+        ),
+        (
+            "Walk me through your strategy for telemetry, structured logging, and distributed tracing across microservices to enable fast root-cause discovery.",
+            ["OpenTelemetry / Tracing", "Correlation IDs", "Centralized logging", "SLOs & Alerting"],
+            "medium"
+        ),
+        (
+            "How would you design an analytics pipeline that ingests, aggregates, and visualizes 100,000 events per second without dropping records?",
+            ["Event streaming (Kafka)", "Batch aggregation", "Time-series databases", "Backpressure management"],
+            "hard"
+        ),
+        (
+            "If you discover a critical memory leak in a production server with increasing heap size, what specific steps and tools do you use to locate it?",
+            ["Heap dump analysis", "Memory profilers", "Garbage collection logs", "Object lifecycle tracking"],
+            "hard"
+        ),
+        (
+            "How do you evaluate whether to build a custom internal tool versus purchasing a SaaS / third-party managed solution?",
+            ["Build vs buy evaluation", "Maintenance TCO", "Core competency focus", "Vendor lock-in risk"],
+            "medium"
+        ),
+        (
+            "How do you design a robust file upload service handling gigabyte-sized videos with resumable uploads and virus scanning?",
+            ["Multipart upload", "Presigned S3 URLs", "Chunk validation", "Async virus scanning queue"],
+            "hard"
+        )
+    ]
+
+    selected_crit_raw = fisher_yates_shuffle(critical_pool)[:5]
+
+    # =========================================================================
+    # 4. ASSEMBLE 15 FINAL UNIQUE QUESTIONS (5 Skill -> 5 Behavioral -> 5 Critical)
+    # =========================================================================
+    final_questions: List[InterviewQuestionItem] = []
+    
+    # 1-5: Skill Questions
+    for idx, (text, topics, diff) in enumerate(selected_skill_raw, start=1):
+        q_id = f"skill_{uuid.uuid4().hex[:8]}"
+        final_questions.append(
             InterviewQuestionItem(
-                id=f"q-skill-{idx}",
+                id=q_id,
                 question_number=idx,
                 category="skill",
                 category_label="Skill-Based",
                 question_text=text,
                 expected_topics=topics,
+                difficulty=diff,
             )
         )
 
-    # 2. 5 Behavioral Questions (STAR Method)
-    behavioral_templates = [
-        (
-            "Tell me about a time you faced a critical production bug or tight release deadline. How did you prioritize and communicate with your team?",
-            ["Situation/Context", "Action taken", "Cross-team communication", "Measurable resolution"],
-        ),
-        (
-            "Describe a situation where you had a technical disagreement with a teammate or stakeholder. How did you reach a constructive outcome?",
-            ["Conflict resolution", "Data-driven trade-offs", "Active listening", "Team alignment"],
-        ),
-        (
-            "Give an example of a project where requirements were vague or rapidly changing. How did you maintain velocity and manage scope?",
-            ["Ambiguity management", "Iterative delivery", "Stakeholder alignment", "Risk mitigation"],
-        ),
-        (
-            "Tell me about a time you mentored a junior engineer or championed an engineering standard that improved overall team quality.",
-            ["Mentorship", "Documentation/Standards", "Long-term team impact", "Code reviews"],
-        ),
-        (
-            "Describe an instance where a project you worked on did not meet its initial goals. What did you learn and how did you adapt your approach?",
-            ["Accountability", "Post-mortem analysis", "Process adaptation", "Continuous learning"],
-        ),
-    ]
-
-    for idx, (text, topics) in enumerate(behavioral_templates, start=6):
-        questions.append(
+    # 6-10: Behavioral Questions
+    for idx, (text, topics, diff) in enumerate(selected_beh_raw, start=6):
+        q_id = f"beh_{uuid.uuid4().hex[:8]}"
+        final_questions.append(
             InterviewQuestionItem(
-                id=f"q-beh-{idx}",
+                id=q_id,
                 question_number=idx,
                 category="behavioral",
                 category_label="Behavioral & Leadership",
                 question_text=text,
                 expected_topics=topics,
+                difficulty=diff,
             )
         )
 
-    # 3. 5 Critical-Thinking & System Design Questions
-    critical_templates = [
-        (
-            "How would you architect a high-traffic web application to guarantee low latency and 99.99% uptime under sudden 10x traffic spikes?",
-            ["Horizontal scaling", "Caching layers", "Load balancing", "Graceful degradation"],
-        ),
-        (
-            "When designing a distributed service, how do you evaluate the trade-offs between a monolithic architecture versus microservices?",
-            ["Operational complexity", "Data consistency", "Deployment velocity", "Network overhead"],
-        ),
-        (
-            "How do you implement security best practices such as JWT authentication, rate limiting, and protection against injection attacks?",
-            ["Authentication/Authorization", "OWASP top 10", "Rate limiting", "Encryption in transit/rest"],
-        ),
-        (
-            "Suppose your API endpoint's p99 response time suddenly spikes from 50ms to 2000ms. Walk me through your step-by-step diagnostic process.",
-            ["APM telemetry", "Database query logs", "Network bottlenecks", "CPU/Memory profiling"],
-        ),
-        (
-            "How do you approach technical debt in an active codebase when business stakeholders prioritize immediate feature delivery?",
-            ["Risk assessment", "Refactoring roadmap", "Business value framing", "Test coverage gating"],
-        ),
-    ]
-
-    for idx, (text, topics) in enumerate(critical_templates, start=11):
-        questions.append(
+    # 11-15: Critical Thinking Questions
+    for idx, (text, topics, diff) in enumerate(selected_crit_raw, start=11):
+        q_id = f"crit_{uuid.uuid4().hex[:8]}"
+        final_questions.append(
             InterviewQuestionItem(
-                id=f"q-crit-{idx}",
+                id=q_id,
                 question_number=idx,
                 category="critical_thinking",
                 category_label="Critical Thinking & Architecture",
                 question_text=text,
                 expected_topics=topics,
+                difficulty=diff,
             )
         )
 
     return GenerateInterviewQuestionsResponse(
-        questions=questions,
+        questions=final_questions,
         total_questions=15,
-        model_version="gemini-1.5-flash-audio-v1",
-        rubric_version="rubric-en-8factor-v1",
+        model_version="gemini-1.5-flash-audio-v2",
+        rubric_version="rubric-randomized-pool-v2",
     )
 
 

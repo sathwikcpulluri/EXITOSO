@@ -179,9 +179,37 @@ export default function AudioInterviewPage() {
           ? rawSkills.map((s: any) => (typeof s === 'string' ? s : s.name)).filter(Boolean)
           : []
 
+        const skills = cleanSkills.length > 0 ? cleanSkills : ['React', 'TypeScript', 'Node.js', 'PostgreSQL', 'Git']
         setCandidateHeadline(finalHeadline)
         setCandidateExperience(finalYears)
-        setCandidateSkills(cleanSkills.length > 0 ? cleanSkills : ['React', 'TypeScript', 'Node.js', 'PostgreSQL', 'Git'])
+        setCandidateSkills(skills)
+
+        // Check for active in-progress session in sessionStorage (Refresh Protection)
+        const cachedRaw = sessionStorage.getItem('careerai_active_audio_interview')
+        if (cachedRaw) {
+          try {
+            const cached = JSON.parse(cachedRaw)
+            if (
+              cached &&
+              cached.questions &&
+              cached.questions.length === 15 &&
+              !cached.isSessionComplete &&
+              cached.userId === user?.id
+            ) {
+              setQuestions(cached.questions)
+              setCurrentIndex(cached.currentIndex ?? 0)
+              setSessionId(cached.sessionId || `session-${Date.now()}`)
+              setSessionDbId(cached.sessionDbId || null)
+              setEvaluatedAnswers(cached.evaluatedAnswers || [])
+              return
+            }
+          } catch (e) {
+            console.warn('[Cache Parse Warning]', e)
+          }
+        }
+
+        // Otherwise generate a fresh randomized set for this new session
+        startNewInterviewSession(skills, finalYears, finalHeadline, targetJobTitle)
       } catch (err) {
         console.error('[AudioInterview Profile Load]', err)
       }
@@ -190,51 +218,107 @@ export default function AudioInterviewPage() {
     loadProfile()
   }, [user?.id])
 
-  // 2. Generate 15 Resume-Aware Interview Questions
-  useEffect(() => {
-    async function generateQuestions() {
-      if (candidateSkills.length === 0) return
-      try {
-        const res = await api.generateInterviewQuestions({
-          candidate_skills: candidateSkills,
-          candidate_experience_years: candidateExperience,
-          candidate_headline: candidateHeadline,
-          job_title: targetJobTitle,
-        })
-        setQuestions(res.questions)
+  // Start a fresh, randomized 15-question interview session
+  const startNewInterviewSession = async (
+    skills = candidateSkills,
+    experience = candidateExperience,
+    headline = candidateHeadline,
+    jobTitle = targetJobTitle
+  ) => {
+    if (skills.length === 0) return
+    setIsEvaluating(false)
+    setIsSessionComplete(false)
+    setCurrentIndex(0)
+    setEvaluatedAnswers([])
+    setCurrentEvaluation(null)
+    setAudioBlob(null)
+    setAudioUrl(null)
+    setTextAnswer('')
+    setLiveTranscript('')
+    setErrorMessage('')
 
-        // Create Supabase session record
-        const {
-          data: { user: authUser },
-        } = await supabase.auth.getUser()
+    const newSessionLocalId = `session-${Date.now()}`
+    setSessionId(newSessionLocalId)
 
-        if (authUser?.id) {
-          const { data: newSession } = await supabase
-            .from('interview_practice_sessions')
-            .insert([
-              {
-                user_id: authUser.id,
-                target_role: targetJobTitle,
-                resume_version: 'Primary Tailored Profile',
-                status: 'in_progress',
-                model_version: 'gemini-1.5-flash-strict-v2',
-                rubric_version: 'rubric-strict-content-first-v2',
-              },
-            ])
-            .select()
-            .single()
+    try {
+      const res = await api.generateInterviewQuestions({
+        candidate_skills: skills,
+        candidate_experience_years: experience,
+        candidate_headline: headline,
+        job_title: jobTitle,
+      })
 
-          if (newSession) {
-            setSessionDbId(newSession.id)
-          }
+      setQuestions(res.questions)
+
+      // Create Supabase session record
+      let dbId: string | null = null
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser()
+
+      if (authUser?.id) {
+        const { data: newSession } = await supabase
+          .from('interview_practice_sessions')
+          .insert([
+            {
+              user_id: authUser.id,
+              target_role: jobTitle,
+              resume_version: 'Primary Tailored Profile',
+              status: 'in_progress',
+              model_version: 'gemini-1.5-flash-audio-v2',
+              rubric_version: 'rubric-randomized-pool-v2',
+            },
+          ])
+          .select()
+          .single()
+
+        if (newSession) {
+          dbId = newSession.id
+          setSessionDbId(dbId)
         }
-      } catch (err) {
-        console.error('[Generate Questions Error]', err)
       }
-    }
 
-    generateQuestions()
-  }, [candidateSkills.length])
+      // Persist active session in sessionStorage
+      sessionStorage.setItem(
+        'careerai_active_audio_interview',
+        JSON.stringify({
+          userId: authUser?.id,
+          sessionId: newSessionLocalId,
+          sessionDbId: dbId,
+          questions: res.questions,
+          currentIndex: 0,
+          evaluatedAnswers: [],
+          isSessionComplete: false,
+        })
+      )
+    } catch (err) {
+      console.error('[Generate Questions Error]', err)
+    }
+  }
+
+  // Update sessionStorage whenever question progress changes
+  useEffect(() => {
+    if (questions.length > 0) {
+      const cachedRaw = sessionStorage.getItem('careerai_active_audio_interview')
+      let prevCache: any = {}
+      if (cachedRaw) {
+        try { prevCache = JSON.parse(cachedRaw) } catch {}
+      }
+      sessionStorage.setItem(
+        'careerai_active_audio_interview',
+        JSON.stringify({
+          ...prevCache,
+          userId: user?.id,
+          sessionId,
+          sessionDbId,
+          questions,
+          currentIndex,
+          evaluatedAnswers,
+          isSessionComplete,
+        })
+      )
+    }
+  }, [currentIndex, evaluatedAnswers, isSessionComplete, questions, sessionDbId, sessionId, user?.id])
 
   // Timer Effect
   useEffect(() => {
@@ -1544,14 +1628,12 @@ export default function AudioInterviewPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  setCurrentIndex(0);
-                  setEvaluatedAnswers([]);
-                  setIsSessionComplete(false);
-                  setSessionId(`session-${Date.now()}`);
+                  sessionStorage.removeItem('careerai_active_audio_interview');
+                  startNewInterviewSession();
                 }}
-                className="gap-1.5 text-xs cursor-pointer"
+                className="gap-1.5 text-xs cursor-pointer font-bold border-rose-500/30 hover:bg-rose-500/10 text-rose-300"
               >
-                <RotateCcw className="h-3.5 w-3.5" /> Start New Session
+                <RotateCcw className="h-3.5 w-3.5" /> Start New Randomized Session
               </Button>
               <Link to="/candidate/dashboard">
                 <Button size="sm" className="text-xs cursor-pointer">

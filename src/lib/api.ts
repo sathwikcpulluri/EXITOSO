@@ -1422,142 +1422,124 @@ export const api = {
       if (!res.ok) throw new Error('API request failed')
       return await res.json()
     } catch {
-      // Fallback deterministic 15-question set based on real skills
+      // Fallback randomized 15-question set based on real skills
       const raw = payload.candidate_skills.filter(Boolean)
-      const s1 = raw[0] || 'React'
-      const s2 = raw[1] || raw[0] || 'TypeScript'
-      const s3 = raw[2] || raw[0] || 'Node.js'
-      const s4 = raw[3] || raw[1] || 'PostgreSQL'
-      const s5 = raw[4] || raw[0] || 'Git'
+      const rawSkills = raw.length > 0 ? raw : ['React', 'TypeScript', 'Node.js', 'PostgreSQL', 'Git', 'Docker', 'AWS', 'Python', 'SQL', 'Redis']
 
+      function shuffleArray<T>(array: T[]): T[] {
+        const arr = [...array]
+        for (let i = arr.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [arr[i], arr[j]] = [arr[j], arr[i]]
+        }
+        return arr
+      }
+
+      const shuffledSkills = shuffleArray(rawSkills)
+
+      // 1. Dynamic Skill Pool (25+ questions)
+      const skillPool: Array<{ text: string; topics: string[]; diff?: string }> = []
+      for (const sk of shuffledSkills) {
+        skillPool.push(
+          { text: `How do you diagnose and resolve performance bottlenecks, high latency, or memory consumption when working with ${sk}?`, topics: [`${sk} profiling`, 'Performance optimization', 'Latency diagnosis'], diff: 'medium' },
+          { text: `Describe a complex architectural component or feature you built from scratch using ${sk}. What design patterns did you apply?`, topics: [`${sk} architecture`, 'Design patterns', 'Modularity'], diff: 'hard' },
+          { text: `Explain your approach to error handling, boundary validation, and defensive programming when developing services with ${sk}.`, topics: [`${sk} error handling`, 'Validation contracts', 'Fault tolerance'], diff: 'medium' },
+          { text: `How do you ensure data integrity, concurrency safety, and type contracts when deploying ${sk} code to production?`, topics: [`${sk} type safety`, 'Concurrency control', 'Data consistency'], diff: 'hard' },
+          { text: `What are the major trade-offs of ${sk} compared to alternative technologies, and what factors justified choosing it in your project?`, topics: [`${sk} trade-offs`, 'Technology evaluation', 'Architectural fit'], diff: 'medium' },
+          { text: `Walk me through your testing, mocking, and automated verification strategy when shipping critical code written in ${sk}.`, topics: [`${sk} testing`, 'Integration mocks', 'CI/CD'], diff: 'medium' },
+          { text: `Describe how you manage state lifecycles, caching layers, and asynchronous event flows when utilizing ${sk}.`, topics: [`${sk} lifecycle`, 'State synchronization', 'Async patterns'], diff: 'hard' },
+          { text: `How do you handle API security, token authentication, and data protection when building backend or client interfaces with ${sk}?`, topics: [`${sk} security`, 'Auth tokens', 'OWASP protection'], diff: 'medium' },
+          { text: `Can you share a specific production outage or difficult bug you investigated in a system powered by ${sk}?`, topics: [`${sk} debugging`, 'Root cause analysis', 'Post-mortem'], diff: 'hard' },
+          { text: `How do you approach database schema migrations, index tuning, and backwards compatibility when using ${sk}?`, topics: [`${sk} database`, 'Migration strategies', 'Zero-downtime'], diff: 'hard' }
+        )
+      }
+
+      // Deduplicate skill pool
+      const seenSkills = new Set<string>()
+      const uniqueSkillPool = skillPool.filter((item) => {
+        const norm = item.text.toLowerCase().replace(/[^a-z0-9]/g, '')
+        if (seenSkills.has(norm)) return false
+        seenSkills.add(norm)
+        return true
+      })
+      const selectedSkills = shuffleArray(uniqueSkillPool).slice(0, 5)
+
+      // 2. Behavioral Pool (20+ questions)
+      const behPool: Array<{ text: string; topics: string[]; diff?: string }> = [
+        { text: 'Tell me about a time you faced a critical production incident or tight release deadline. How did you prioritize tasks and communicate with your team?', topics: ['Situation', 'Action taken', 'Communication', 'Resolution'], diff: 'medium' },
+        { text: 'Describe a situation where you had a significant technical disagreement with a teammate or lead. How did you reach constructive alignment?', topics: ['Conflict resolution', 'Data-driven trade-offs', 'Active listening'], diff: 'medium' },
+        { text: 'Give an example of a project where requirements were vague or rapidly changing. How did you maintain velocity and manage scope creep?', topics: ['Ambiguity management', 'Iterative delivery', 'Risk mitigation'], diff: 'hard' },
+        { text: "Tell me about a time you mentored a junior colleague or championed an engineering standard that significantly improved your team's code quality.", topics: ['Mentorship', 'Standards', 'Team impact', 'Code reviews'], diff: 'medium' },
+        { text: 'Describe an instance where a project you worked on did not meet its initial goals or missed a milestone. What did you learn and how did you adapt?', topics: ['Accountability', 'Post-mortem', 'Process adaptation', 'Learning'], diff: 'medium' },
+        { text: 'Tell me about a time you had to deliver difficult news or explain a project delay to a non-technical stakeholder or manager. How did you handle it?', topics: ['Stakeholder communication', 'Transparency', 'Expectation management'], diff: 'hard' },
+        { text: 'Describe how you prioritized competing tasks and high-priority bugs when multiple stakeholders requested urgent deliverables simultaneously.', topics: ['Time management', 'Impact vs effort assessment', 'Triage'], diff: 'medium' },
+        { text: 'Tell me about a time you advocated for refactoring or paying down technical debt against heavy pressure to ship user-facing features quickly.', topics: ['Tech debt advocacy', 'Business justification', 'Incremental refactoring'], diff: 'hard' },
+        { text: 'Describe a situation where a teammate made a significant error in production. How did you support them, resolve the issue, and prevent future occurrences?', topics: ['Blameless culture', 'Incident response', 'Guardrails'], diff: 'medium' },
+        { text: 'Give an example of how you took personal ownership of an ambiguous problem that was outside your direct area of responsibility.', topics: ['Extreme ownership', 'Proactivity', 'Measurable impact'], diff: 'hard' },
+        { text: 'Tell me about a time you received tough or critical feedback during a performance review or code review. How did you process it and improve?', topics: ['Receptiveness to feedback', 'Growth mindset', 'Actionable improvement'], diff: 'medium' },
+        { text: 'Describe a scenario where you had to collaborate closely with a cross-functional team (Product, Design, QA) with differing priorities.', topics: ['Cross-functional collaboration', 'Shared goals', 'Alignment'], diff: 'medium' },
+        { text: 'Tell me about a time you had to quickly master an unfamiliar programming language or framework under time constraints to unblock a project.', topics: ['Rapid learning', 'Resourcefulness', 'Unblocking goals'], diff: 'hard' },
+        { text: 'Describe a situation where you had to make a tough technical compromise to meet a business launch date. How did you manage the aftermath?', topics: ['Pragmatic trade-offs', 'Debt tracking', 'Future-proofing'], diff: 'hard' },
+        { text: 'Tell me about a time you went above and beyond to improve customer experience or system reliability without being explicitly asked.', topics: ['Customer focus', 'Proactive engineering', 'Reliability enhancements'], diff: 'medium' }
+      ]
+      const selectedBeh = shuffleArray(behPool).slice(0, 5)
+
+      // 3. Critical-Thinking Pool (20+ questions)
+      const critPool: Array<{ text: string; topics: string[]; diff?: string }> = [
+        { text: 'How would you architect a high-traffic web application to guarantee low latency and 99.99% uptime under sudden 10x traffic spikes?', topics: ['Horizontal scaling', 'Caching', 'Load balancing', 'Graceful degradation'], diff: 'hard' },
+        { text: 'When designing a distributed service, how do you evaluate the trade-offs between a monolithic architecture versus microservices?', topics: ['Complexity', 'Consistency', 'Velocity', 'Network overhead'], diff: 'hard' },
+        { text: 'Suppose your API endpoint p99 response time suddenly spikes from 50ms to 2500ms in production. Walk me through your step-by-step diagnostic workflow.', topics: ['APM telemetry', 'Query logs', 'Bottlenecks', 'Profiling'], diff: 'hard' },
+        { text: 'How do you design a robust cache invalidation and distributed lock strategy to prevent race conditions in high-throughput systems?', topics: ['Cache invalidation', 'Distributed locks', 'Race conditions'], diff: 'hard' },
+        { text: 'How do you approach database sharding, read replicas, and connection pooling when scaling out a relational database?', topics: ['Sharding', 'Read replicas', 'Connection pools', 'Replication lag'], diff: 'hard' },
+        { text: 'If an external third-party payment or authentication API goes down, how do you design your system for graceful degradation and retry resilience?', topics: ['Circuit breakers', 'Exponential backoff', 'Dead letter queues'], diff: 'medium' },
+        { text: 'How do you balance strong consistency versus eventual consistency in a globally distributed multi-region application?', topics: ['CAP theorem', 'Eventual consistency', 'Conflict resolution'], diff: 'hard' },
+        { text: 'How would you architect an idempotent background job processing system that guarantees exactly-once processing for financial transactions?', topics: ['Idempotency keys', 'Distributed transactions', 'State checks'], diff: 'hard' },
+        { text: 'Describe how you ensure zero-downtime database migrations when altering multi-million row tables in an active production database.', topics: ['Expand-contract pattern', 'Zero-downtime', 'Dual writing'], diff: 'hard' },
+        { text: 'Walk me through how you would design a real-time notification service delivering millions of push alerts with sub-second latency.', topics: ['WebSockets/SSE', 'Pub/Sub brokers', 'Fanout queues'], diff: 'hard' },
+        { text: 'How do you implement security best practices such as JWT authentication, rate limiting, and protection against injection attacks?', topics: ['Auth/Authorization', 'OWASP Top 10', 'Rate limits', 'Encryption'], diff: 'medium' },
+        { text: 'How do you approach technical debt in an active codebase when business stakeholders prioritize immediate feature delivery?', topics: ['Risk assessment', 'Refactoring roadmap', 'Business value framing'], diff: 'medium' },
+        { text: 'Suppose your team is split on choosing between SQL and NoSQL for a new feature. What technical criteria and access patterns would you use to decide?', topics: ['Relational vs document', 'ACID vs BASE', 'Access patterns'], diff: 'medium' },
+        { text: 'How would you design a rate limiter that enforces per-user throttling across a distributed cluster of web servers?', topics: ['Token bucket', 'Sliding window log', 'Distributed Redis counter'], diff: 'hard' },
+        { text: 'How do you prevent cascading failures and thread pool exhaustion when multiple backend services depend on each other synchronously?', topics: ['Timeouts', 'Bulkhead pattern', 'Circuit breakers'], diff: 'hard' }
+      ]
+      const selectedCrit = shuffleArray(critPool).slice(0, 5)
+
+      // Assemble 15 questions: 1..5 Skill, 6..10 Behavioral, 11..15 Critical
       const questions: InterviewQuestionItem[] = [
-        {
-          id: 'q-skill-1',
-          question_number: 1,
+        ...selectedSkills.map((s, i) => ({
+          id: `skill_${Math.random().toString(36).substring(2, 9)}`,
+          question_number: i + 1,
           category: 'skill',
           category_label: 'Skill-Based',
-          question_text: `Explain how you manage state lifecycles and performance optimization when developing complex applications with ${s1}.`,
-          expected_topics: [`${s1} state`, 'Rendering optimization', 'Lifecycle hooks', 'Memory profiling'],
-        },
-        {
-          id: 'q-skill-2',
-          question_number: 2,
-          category: 'skill',
-          category_label: 'Skill-Based',
-          question_text: `Describe how you ensure type safety, data integrity, and strict contracts when writing production services using ${s2}.`,
-          expected_topics: [`${s2} type safety`, 'Contract validation', 'Error handling', 'Interfaces'],
-        },
-        {
-          id: 'q-skill-3',
-          question_number: 3,
-          category: 'skill',
-          category_label: 'Skill-Based',
-          question_text: `How do you handle asynchronous operations, error propagation, and concurrency when building APIs or backends with ${s3}?`,
-          expected_topics: [`${s3} async patterns`, 'Event loop', 'Promises', 'Rate limiting'],
-        },
-        {
-          id: 'q-skill-4',
-          question_number: 4,
-          category: 'skill',
-          category_label: 'Skill-Based',
-          question_text: `Walk me through your strategy for database schema indexing, query optimization, and transaction boundaries when using ${s4}.`,
-          expected_topics: [`${s4} indexing`, 'Execution plans', 'ACID transactions', 'Query latency'],
-        },
-        {
-          id: 'q-skill-5',
-          question_number: 5,
-          category: 'skill',
-          category_label: 'Skill-Based',
-          question_text: `Describe your automated testing, continuous integration, and version branching workflow when shipping software with ${s5}.`,
-          expected_topics: [`${s5} branching`, 'Unit/Integration tests', 'CI/CD pipelines', 'Releases'],
-        },
-        {
-          id: 'q-beh-6',
-          question_number: 6,
+          question_text: s.text,
+          expected_topics: s.topics,
+          difficulty: s.diff,
+        })),
+        ...selectedBeh.map((b, i) => ({
+          id: `beh_${Math.random().toString(36).substring(2, 9)}`,
+          question_number: i + 6,
           category: 'behavioral',
           category_label: 'Behavioral & Leadership',
-          question_text: 'Tell me about a time you faced a critical production bug or tight release deadline. How did you prioritize and communicate with your team?',
-          expected_topics: ['Situation', 'Action taken', 'Communication', 'Resolution'],
-        },
-        {
-          id: 'q-beh-7',
-          question_number: 7,
-          category: 'behavioral',
-          category_label: 'Behavioral & Leadership',
-          question_text: 'Describe a situation where you had a technical disagreement with a teammate or stakeholder. How did you reach a constructive outcome?',
-          expected_topics: ['Conflict resolution', 'Data-driven trade-offs', 'Active listening', 'Alignment'],
-        },
-        {
-          id: 'q-beh-8',
-          question_number: 8,
-          category: 'behavioral',
-          category_label: 'Behavioral & Leadership',
-          question_text: 'Give an example of a project where requirements were vague or rapidly changing. How did you maintain velocity and manage scope?',
-          expected_topics: ['Ambiguity', 'Iterative delivery', 'Scope management', 'Risk mitigation'],
-        },
-        {
-          id: 'q-beh-9',
-          question_number: 9,
-          category: 'behavioral',
-          category_label: 'Behavioral & Leadership',
-          question_text: 'Tell me about a time you mentored a junior engineer or championed an engineering standard that improved overall team quality.',
-          expected_topics: ['Mentorship', 'Standards', 'Team impact', 'Code reviews'],
-        },
-        {
-          id: 'q-beh-10',
-          question_number: 10,
-          category: 'behavioral',
-          category_label: 'Behavioral & Leadership',
-          question_text: 'Describe an instance where a project you worked on did not meet its initial goals. What did you learn and how did you adapt your approach?',
-          expected_topics: ['Accountability', 'Post-mortem', 'Process adaptation', 'Learning'],
-        },
-        {
-          id: 'q-crit-11',
-          question_number: 11,
+          question_text: b.text,
+          expected_topics: b.topics,
+          difficulty: b.diff,
+        })),
+        ...selectedCrit.map((c, i) => ({
+          id: `crit_${Math.random().toString(36).substring(2, 9)}`,
+          question_number: i + 11,
           category: 'critical_thinking',
           category_label: 'Critical Thinking & Architecture',
-          question_text: 'How would you architect a high-traffic web application to guarantee low latency and 99.99% uptime under sudden 10x traffic spikes?',
-          expected_topics: ['Horizontal scaling', 'Caching', 'Load balancing', 'Degradation'],
-        },
-        {
-          id: 'q-crit-12',
-          question_number: 12,
-          category: 'critical_thinking',
-          category_label: 'Critical Thinking & Architecture',
-          question_text: 'When designing a distributed service, how do you evaluate the trade-offs between a monolithic architecture versus microservices?',
-          expected_topics: ['Complexity', 'Consistency', 'Velocity', 'Network latency'],
-        },
-        {
-          id: 'q-crit-13',
-          question_number: 13,
-          category: 'critical_thinking',
-          category_label: 'Critical Thinking & Architecture',
-          question_text: 'How do you implement security best practices such as JWT authentication, rate limiting, and protection against injection attacks?',
-          expected_topics: ['Auth/Authorization', 'OWASP Top 10', 'Rate limits', 'Encryption'],
-        },
-        {
-          id: 'q-crit-14',
-          question_number: 14,
-          category: 'critical_thinking',
-          category_label: 'Critical Thinking & Architecture',
-          question_text: 'Suppose your API endpoint p99 response time suddenly spikes from 50ms to 2000ms. Walk me through your step-by-step diagnostic process.',
-          expected_topics: ['APM telemetry', 'Query logs', 'Bottlenecks', 'Profiling'],
-        },
-        {
-          id: 'q-crit-15',
-          question_number: 15,
-          category: 'critical_thinking',
-          category_label: 'Critical Thinking & Architecture',
-          question_text: 'How do you approach technical debt in an active codebase when business stakeholders prioritize immediate feature delivery?',
-          expected_topics: ['Risk assessment', 'Refactoring plan', 'Business value', 'Testing'],
-        },
+          question_text: c.text,
+          expected_topics: c.topics,
+          difficulty: c.diff,
+        })),
       ]
 
       return {
         questions,
         total_questions: 15,
-        model_version: 'gemini-1.5-flash-audio-v1',
-        rubric_version: 'rubric-en-8factor-v1',
+        model_version: 'gemini-1.5-flash-audio-v2',
+        rubric_version: 'rubric-randomized-pool-v2',
       }
     }
   },
