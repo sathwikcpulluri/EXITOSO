@@ -1799,23 +1799,39 @@ class SpecialScores(BaseModel):
     behavioral_structure: float = Field(..., description="0-10 score (STAR)")
     critical_thinking: float = Field(..., description="0-10 score")
 
+class StrictScoreBreakdown(BaseModel):
+    accuracy: float = Field(..., description="0-10 score")
+    explanationQuality: float = Field(..., description="0-10 score")
+    structure: float = Field(..., description="0-10 score")
+    examplesEvidence: float = Field(..., description="0-10 score")
+    clarity: float = Field(..., description="0-10 score")
+    conciseness: float = Field(..., description="0-10 score")
+    professionalCommunication: float = Field(..., description="0-10 score")
+
 class EvaluateAudioAnswerResponse(BaseModel):
     is_english: bool
     language: str
     language_confidence: float
     transcript: str
+    answerStatus: Optional[str] = None  # "direct" | "mostly_relevant" | "partially_relevant" | "mostly_off_topic" | "irrelevant" | "empty"
+    questionUnderstanding: Optional[float] = None
+    answerRelevance: Optional[float] = None
+    contentCoverage: Optional[float] = None
+    offTopicRatio: Optional[float] = None
+    scores: Optional[StrictScoreBreakdown] = None
     parameter_scores: Optional[ParameterScores28] = None
     special_scores: Optional[SpecialScores] = None
     content_score: Optional[float] = None
     delivery_score: Optional[float] = None
+    overallScore: Optional[float] = None
     overall_score: Optional[float] = None
-    question_understanding: Optional[float] = None
     strengths: List[str] = []
     weaknesses: List[str] = []
     feedback: str
+    improvementTip: str
     improvement_tip: str
-    model_version: str = "gemini-1.5-flash-audio-v1"
-    rubric_version: str = "rubric-en-28param-v1"
+    model_version: str = "gemini-1.5-flash-strict-v2"
+    rubric_version: str = "rubric-strict-content-first-v2"
 
 
 @app.post("/api/v1/interview/evaluate-audio", response_model=EvaluateAudioAnswerResponse)
@@ -1827,12 +1843,15 @@ async def evaluate_audio_answer(
     expected_topics: Optional[str] = Form(None),
 ):
     """
-    Transcribes spoken audio response and evaluates communication content:
-    - Verifies English language
-    - Evaluates 28 observable answer/communication parameters on a 1-5 scale (excluding video-only non_verbal)
-    - Separates Content Score from Audio/Delivery Score
-    - Uses question-specific weights to calculate the 0.0 - 10.0 Interview Communication Score
-    - Strictly forbids scoring accent, ethnicity, pitch, or protected demographic traits
+    Strict Content-First Spoken Answer Evaluation:
+    STEP 1: Is the answer understandable & English?
+    STEP 2: Does it answer the question? (answerRelevance 0-10 hard gate)
+    STEP 3: Does it cover the required topics/elements? (contentCoverage 0-100%)
+    STEP 4: Is the information accurate/reasonable? (accuracy 0-10)
+    STEP 5: Is the answer structured? (structure 0-10)
+    STEP 6: Is it concise? (offTopicRatio & conciseness)
+    STEP 7: Communication & delivery (clarity, professionalism)
+    Mandatory hard caps prevent fluent irrelevant answers from scoring above 1.0–3.0 / 10.0.
     """
     raw_transcript = ""
     
@@ -1853,20 +1872,52 @@ async def evaluate_audio_answer(
                             data=audio_bytes,
                             mime_type=mime_type,
                         ),
-                        "Please provide an accurate verbatim transcription of this spoken English interview answer. Do not translate. Transcribe in English."
+                        "Please provide an accurate verbatim transcription of this spoken English interview answer. Do not translate. Transcribe verbatim in English."
                     ]
                 )
                 raw_transcript = response.text.strip() if response.text else ""
             else:
-                raw_transcript = transcript_text or "In our previous project, I implemented a robust solution using structured modular components, ensuring high availability and thorough error handling across all service boundaries."
+                raw_transcript = transcript_text or ""
         except Exception as e:
             print(f"[Interview Audio Transcribe Warning]: {e}")
             raw_transcript = transcript_text or ""
     elif transcript_text:
         raw_transcript = transcript_text.strip()
 
-    if not raw_transcript:
-        raw_transcript = "I prioritized modular architectural design, clear separation of concerns, and comprehensive automated test suites to ensure system reliability and seamless cross-functional team delivery."
+    # If still empty
+    if not raw_transcript.strip():
+        return EvaluateAudioAnswerResponse(
+            is_english=True,
+            language="English",
+            language_confidence=1.0,
+            transcript="",
+            answerStatus="empty",
+            questionUnderstanding=0.0,
+            answerRelevance=0.0,
+            contentCoverage=0.0,
+            offTopicRatio=1.0,
+            scores=StrictScoreBreakdown(
+                accuracy=0.0,
+                explanationQuality=0.0,
+                structure=0.0,
+                examplesEvidence=0.0,
+                clarity=0.0,
+                conciseness=0.0,
+                professionalCommunication=0.0,
+            ),
+            parameter_scores=None,
+            special_scores=None,
+            content_score=0.0,
+            delivery_score=0.0,
+            overallScore=0.0,
+            overall_score=0.0,
+            strengths=[],
+            weaknesses=["No answer recorded. Please provide a spoken response to this question."],
+            feedback="No speech or text detected for this question.",
+            improvementTip="Click 'Start Recording' and speak your answer clearly into your microphone.",
+            model_version="gemini-1.5-flash-strict-v2",
+            rubric_version="rubric-strict-content-first-v2",
+        )
 
     # 2. English-Only Language Detection
     non_ascii_chars = sum(1 for c in raw_transcript if ord(c) > 127)
@@ -1876,270 +1927,354 @@ async def evaluate_audio_answer(
         return EvaluateAudioAnswerResponse(
             is_english=False,
             language="Non-English",
-            language_confidence=0.94,
+            language_confidence=0.95,
             transcript=raw_transcript,
+            answerStatus="irrelevant",
+            questionUnderstanding=0.0,
+            answerRelevance=0.0,
+            contentCoverage=0.0,
+            offTopicRatio=1.0,
+            scores=None,
             parameter_scores=None,
             special_scores=None,
-            content_score=None,
-            delivery_score=None,
-            overall_score=None,
-            question_understanding=None,
+            content_score=0.0,
+            delivery_score=0.0,
+            overallScore=0.0,
+            overall_score=0.0,
             strengths=[],
-            weaknesses=[],
+            weaknesses=["Spoken answer was not in English."],
             feedback="Please answer this interview question in English.",
-            improvement_tip="The communication practice evaluator currently assesses spoken English answers.",
+            improvementTip="The communication practice evaluator currently assesses spoken English answers.",
+            model_version="gemini-1.5-flash-strict-v2",
+            rubric_version="rubric-strict-content-first-v2",
         )
 
-    # 3. Content Analysis & Token Overlap
+    # 3. Content Analysis & Token Processing
+    transcript_lower = raw_transcript.lower()
     words = raw_transcript.split()
     word_count = len(words)
 
-    q_tokens = set(re.findall(r"\w{4,}", question_text.lower()))
-    t_tokens = set(re.findall(r"\w{4,}", raw_transcript.lower()))
-    overlap = len(q_tokens.intersection(t_tokens))
+    q_lower = question_text.lower()
+    q_words = set(re.findall(r"\b[a-zA-Z]{3,}\b", q_lower))
+    # Exclude common question stopwords from keyword overlap
+    stopwords = {"tell", "about", "your", "what", "when", "describe", "give", "explain", "with", "from", "that", "this", "have", "would", "how", "time", "where", "which"}
+    key_q_words = q_words - stopwords
 
-    # Question Understanding (0-10)
-    question_understanding = min(max(5.0 + overlap * 1.2, 4.0), 9.6)
+    # 4. Generic Filler Detection (e.g. "I am hardworking, passionate, team player")
+    generic_filler_patterns = [
+        r"\b(i am|i'm)\s+(very\s+)?(hardworking|passionate|dedicated|confident|a team player|positive|excited|punctual|honest)\b",
+        r"\b(i\s+always\s+(try|do)\s+my\s+best)\b",
+        r"\b(i\s+like|i\s+love)\s+(working with (people|teams|others)|learning new things|challenges|technology|coding)\b",
+        r"\b(my\s+(friends|colleagues|teachers|boss)\s+think\s+i('m| am))\b",
+        r"\b(i\s+usually\s+wake\s+up\s+early)\b",
+        r"\b(i\s+work\s+well\s+with\s+everyone)\b",
+        r"\b(i\s+have\s+good\s+communication\s+skills)\b",
+        r"\b(i\s+am\s+a\s+quick\s+learner)\b",
+    ]
 
-    # 4. Measure 28 Observable Parameters on a 1 - 5 Scale
-    # 1. Clarity (1-5)
-    clarity_5 = 4.5 if word_count >= 30 else (3.8 if word_count >= 15 else 2.5)
+    filler_count = 0
+    for pat in generic_filler_patterns:
+        matches = re.findall(pat, transcript_lower)
+        filler_count += len(matches)
 
-    # 2. Relevance (1-5)
-    relevance_5 = min(max(2.8 + overlap * 0.5, 2.5), 4.8)
+    # 5. Required Elements & Topic Checking
+    has_tech_topic = False
+    has_concrete_problem = False
+    has_concrete_action = False
+    has_concrete_outcome = False
+    has_star_structure = False
+    has_diagnostic_reasoning = False
 
-    # 3. Structure (1-5)
-    has_star = any(w in raw_transcript.lower() for w in ["because", "result", "implemented", "first", "then", "led to", "ensured", "situation", "action"])
-    structure_5 = 4.4 if has_star else 3.5
+    # A. Technical question markers
+    tech_keywords = [
+        "react", "typescript", "javascript", "node", "python", "postgresql", "sql", "git", "api", "database",
+        "state", "component", "render", "re-render", "memoization", "pagination", "index", "indexing", "query",
+        "latency", "cache", "caching", "redis", "docker", "endpoint", "pipeline", "schema", "architecture",
+        "lock", "concurrency", "thread", "async", "await", "promise", "event loop", "interface", "type", "error"
+    ]
+    problem_keywords = [
+        "slow", "bug", "latency", "error", "crash", "bottleneck", "spike", "deadlock", "memory leak",
+        "unnecessary", "failed", "outage", "spikes", "issue", "conflict", "disagreement", "vague", "delay",
+        "downtime", "challenge", "difficult", "problem"
+    ]
+    action_keywords = [
+        "implemented", "optimized", "indexed", "memoized", "refactored", "paginated", "decoupled", "fixed",
+        "isolated", "configured", "debugged", "profiled", "scheduled", "communicated", "designed", "architected",
+        "introduced", "checked", "mitigated", "analyzed", "investigated", "created", "built"
+    ]
+    outcome_keywords = [
+        "reduced", "faster", "improved", "percent", "%", "ms", "seconds", "responsive", "resolved", "zero downtime",
+        "uptime", "delivered", "prevented", "stabilized", "success", "recovered", "boosted"
+    ]
 
-    # 4. Conciseness (1-5)
-    conciseness_5 = 4.5 if (25 <= word_count <= 140) else (3.5 if word_count <= 220 else 2.8)
+    has_tech_topic = any(w in transcript_lower for w in tech_keywords)
+    has_concrete_problem = any(w in transcript_lower for w in problem_keywords)
+    has_concrete_action = any(w in transcript_lower for w in action_keywords)
+    has_concrete_outcome = any(w in transcript_lower for w in outcome_keywords)
 
-    # 5. Completeness (1-5)
-    completeness_5 = min(max(2.5 + (word_count / 30.0), 2.5), 4.7)
+    # B. STAR structure markers
+    has_star_structure = (
+        (has_concrete_problem or any(w in transcript_lower for w in ["situation", "when", "project", "deadline", "task"])) and
+        has_concrete_action and
+        (has_concrete_outcome or any(w in transcript_lower for w in ["result", "outcome", "learned", "delivered"]))
+    )
 
-    # 6. Listening / Comprehension (1-5)
-    listening_5 = min(max(3.0 + overlap * 0.4, 3.0), 4.8)
+    # C. Critical-thinking reasoning markers
+    has_diagnostic_reasoning = (
+        any(w in transcript_lower for w in ["first", "then", "step", "identify", "logs", "monitoring", "root-cause", "mitigate", "trade-off", "alternative", "bottleneck", "because", "impact"])
+    )
 
-    # 7. Confidence in communication (1-5)
-    confidence_5 = 4.3 if word_count >= 25 else 3.2
+    # 6. Calculate Content Coverage & Required Elements Count
+    total_required = 3
+    answered_required = 0
 
-    # 8. Vocabulary (1-5)
-    has_tech_vocab = any(w in raw_transcript.lower() for w in ["architect", "optimized", "concurrency", "distributed", "protocol", "framework", "lifecycle", "pipeline", "schema", "latency"])
-    vocab_5 = 4.5 if has_tech_vocab else 3.7
-
-    # 9. Grammar (1-5)
-    grammar_5 = 4.4
-
-    # 10. Fluency (1-5)
-    fluency_5 = 4.3 if word_count >= 20 else 3.4
-
-    # 11. Pronunciation Intelligibility (1-5)
-    pronunciation_5 = 4.5
-
-    # 12. Pace (1-5)
-    pace_5 = 4.2
-
-    # 13. Tone (1-5)
-    tone_5 = 4.4
-
-    # 14. Active Listening (1-5)
-    active_listening_5 = min(max(3.2 + overlap * 0.35, 3.0), 4.6)
-
-    # 15. Question Handling (1-5)
-    q_handling_5 = 4.3 if overlap >= 1 else 3.3
-
-    # 16. Explanation Ability (1-5)
-    explanation_5 = min(max(3.0 + (word_count / 35.0), 3.0), 4.7)
-
-    # 17. Use of Examples / Evidence (1-5)
-    has_evidence = any(w in raw_transcript.lower() for w in ["project", "production", "percent", "team", "api", "database", "service", "ms", "%", "users", "reduced"])
-    examples_5 = 4.5 if has_evidence else 3.2
-
-    # 18. Logical Reasoning (1-5)
-    has_reasoning = any(w in raw_transcript.lower() for w in ["why", "therefore", "trade-off", "optimized", "decided", "approach", "because", "impact"])
-    reasoning_5 = 4.5 if has_reasoning else 3.4
-
-    # 19. Adaptability (1-5)
-    adaptability_5 = 4.1
-
-    # 20. Non-verbal Communication: ALWAYS NULL for audio-only
-    non_verbal_5 = None
-
-    # 21. Engagement (1-5)
-    engagement_5 = 4.3
-
-    # 22. Professionalism (1-5)
-    professionalism_5 = 4.6
-
-    # 23. Self-Awareness (1-5)
-    has_self_awareness = any(w in raw_transcript.lower() for w in ["learned", "improved", "adapted", "feedback", "mistake", "reflection"])
-    self_awareness_5 = 4.4 if has_self_awareness else 3.8
-
-    # 24. Consistency (1-5)
-    consistency_5 = 4.4
-
-    # 25. Persuasiveness (1-5)
-    persuasiveness_5 = 4.2 if has_evidence else 3.5
-
-    # 26. Emotional Control (1-5)
-    emotional_control_5 = 4.6
-
-    # 27. Cultural / Interpersonal Sensitivity (1-5)
-    cultural_sensitivity_5 = 4.5
-
-    # 28. Question Asking (1-5)
-    question_asking_5 = 4.0
-
-    # 5. Special Explanation & Structural Scores (0.0 to 10.0 scale)
-    technical_accuracy_10 = min(max(6.0 + overlap * 0.8, 5.5), 9.6)
-    understanding_10 = question_understanding
-    simplicity_10 = 8.5 if (word_count >= 20 and word_count <= 150) else 7.2
-    behavioral_structure_10 = 8.8 if has_star else 6.8
-    critical_thinking_10 = 8.7 if has_reasoning else 7.0
-
-    # 6. Question-Specific Weighted Score Calculation (0.0 to 10.0 scale)
-    # Using specific category weighting formulas
     if category == "skill":
-        # Technical Accuracy 20%, Explanation 15%, Understanding 15%, Reasoning 10%, Completeness 10%, Clarity 10%, Examples 10%, Relevance 5%, Structure 5%
-        weighted_5 = (
-            (technical_accuracy_10 / 2.0) * 0.20
-            + explanation_5 * 0.15
-            + (understanding_10 / 2.0) * 0.15
-            + reasoning_5 * 0.10
-            + completeness_5 * 0.10
-            + clarity_5 * 0.10
-            + examples_5 * 0.10
-            + relevance_5 * 0.05
-            + structure_5 * 0.05
-        )
+        # Technical questions require: 1. Relevant tech context, 2. Problem/implementation action, 3. Solution/Result
+        if has_tech_topic or any(w in transcript_lower for w in key_q_words):
+            answered_required += 1
+        if has_concrete_action or has_concrete_problem:
+            answered_required += 1
+        if has_concrete_outcome or has_concrete_action:
+            answered_required += 1
     elif category == "behavioral":
-        # Clarity 15%, Relevance 15%, Structure 10%, Completeness 10%, Professionalism 10%, Self-Awareness 10%, Examples 10%, Confidence 10%, Active Listening 5%, Conciseness 5%
-        weighted_5 = (
-            clarity_5 * 0.15
-            + relevance_5 * 0.15
-            + structure_5 * 0.10
-            + completeness_5 * 0.10
-            + professionalism_5 * 0.10
-            + self_awareness_5 * 0.10
-            + examples_5 * 0.10
-            + confidence_5 * 0.10
-            + active_listening_5 * 0.05
-            + conciseness_5 * 0.05
-        )
+        # Behavioral questions require: 1. Specific situation/task context, 2. Personal action taken, 3. Concrete resolution/learning
+        if any(w in transcript_lower for w in ["project", "team", "colleague", "stakeholder", "deadline", "release", "disagreement", "conflict", "goal", "junior", "mentor"]):
+            answered_required += 1
+        if has_concrete_action:
+            answered_required += 1
+        if has_concrete_outcome or any(w in transcript_lower for w in ["resolved", "aligned", "learned", "delivered", "outcome", "improved"]):
+            answered_required += 1
     else:  # critical_thinking
-        # Logical Reasoning 20%, Question Handling 15%, Clarity 15%, Structure 10%, Completeness 10%, Explanation 10%, Adaptability 10%, Examples 5%, Conciseness 5%
-        weighted_5 = (
-            reasoning_5 * 0.20
-            + q_handling_5 * 0.15
-            + clarity_5 * 0.15
-            + structure_5 * 0.10
-            + completeness_5 * 0.10
-            + explanation_5 * 0.10
-            + adaptability_5 * 0.10
-            + examples_5 * 0.05
-            + conciseness_5 * 0.05
-        )
+        # Critical questions require: 1. Scope/Problem understanding, 2. Reasoning/Trade-offs, 3. Mitigation/Conclusion
+        if any(w in transcript_lower for w in ["scope", "impact", "traffic", "spike", "latency", "microservice", "monolith", "auth", "outage", "debt", "uptime", "logs"]):
+            answered_required += 1
+        if has_diagnostic_reasoning:
+            answered_required += 1
+        if any(w in transcript_lower for w in ["caching", "scaling", "load balancing", "mitigate", "stakeholder", "post-mortem", "recovery", "refactor", "security", "conclusion"]):
+            answered_required += 1
 
-    # Convert 1-5 scale to 0.0 - 10.0: (weighted_5 / 5.0) * 10.0
-    overall_answer_score = round((weighted_5 / 5.0) * 10.0, 1)
-    overall_answer_score = min(max(overall_answer_score, 3.0), 9.8)
+    content_coverage = answered_required / float(total_required)  # 0.0 to 1.0
+
+    # 7. Off-Topic Ratio Analysis
+    # If the transcript is dominated by generic filler phrases or lacks target question keywords
+    matched_q_keywords = [w for w in key_q_words if w in transcript_lower]
+    keyword_match_ratio = len(matched_q_keywords) / max(len(key_q_words), 1)
+
+    if filler_count >= 2 and answered_required == 0:
+        off_topic_ratio = 0.95
+    elif answered_required == 0 and not has_tech_topic and not has_concrete_action:
+        off_topic_ratio = 0.90
+    elif answered_required == 1:
+        off_topic_ratio = 0.65
+    elif answered_required == 2:
+        off_topic_ratio = 0.25
+    else:
+        off_topic_ratio = 0.05
+
+    # 8. Gated Answer Relevance Calculation (0.0 to 10.0)
+    # Gating Rule: If generic filler or 0 required elements answered, answerRelevance is capped at 0.5–2.0
+    if filler_count >= 2 and answered_required == 0:
+        answer_relevance = 1.0
+    elif answered_required == 0:
+        answer_relevance = 1.5 if (has_tech_topic or keyword_match_ratio > 0.3) else 0.5
+    elif answered_required == 1:
+        answer_relevance = 3.5 if keyword_match_ratio > 0.2 else 2.5
+    elif answered_required == 2:
+        answer_relevance = 6.5 + (0.5 if has_concrete_outcome else 0.0)
+    else:  # answered_required == 3
+        answer_relevance = 9.0 + (0.5 if (has_concrete_outcome and has_tech_topic) else 0.0)
+        answer_relevance = min(answer_relevance, 9.8)
+
+    # Classify Answer Status
+    if word_count < 4:
+        answer_status = "empty"
+    elif answer_relevance <= 1.5 or content_coverage < 0.20:
+        answer_status = "irrelevant"
+    elif off_topic_ratio > 0.60 or answer_relevance <= 3.5:
+        answer_status = "mostly_off_topic"
+    elif answer_relevance <= 5.5:
+        answer_status = "partially_relevant"
+    elif answer_relevance <= 8.0:
+        answer_status = "mostly_relevant"
+    else:
+        answer_status = "direct"
+
+    # 9. Individual Component Scores (0.0 to 10.0 scale)
+    accuracy_10 = 9.2 if (has_tech_topic and answered_required >= 2) else (6.0 if answered_required >= 1 else 1.5)
+    explanation_quality_10 = 9.0 if (answered_required >= 2 and word_count >= 20) else (5.0 if answered_required >= 1 else 1.5)
+    structure_10 = 9.0 if has_star_structure else (6.5 if answered_required >= 2 else 2.0)
+    examples_evidence_10 = 9.2 if has_concrete_outcome else (6.5 if has_concrete_problem else 1.5)
+    clarity_10 = 9.0 if word_count >= 15 else (7.0 if word_count >= 6 else 3.0)
+    conciseness_10 = 9.0 if (20 <= word_count <= 140 and off_topic_ratio < 0.3) else (6.5 if word_count <= 200 else 3.0)
+    professionalism_10 = 9.0 if word_count >= 8 else 4.0
+
+    # 10. Calculate Base Score using Strict Content-First Weights
+    # Question Relevance: 25%, Content Coverage: 20%, Accuracy: 15%, Explanation Quality: 10%, Structure: 10%, Evidence: 5%, Clarity: 5%, Conciseness: 5%, Professionalism: 5%
+    base_score = (
+        (answer_relevance * 0.25) +
+        (content_coverage * 10.0 * 0.20) +
+        (accuracy_10 * 0.15) +
+        (explanation_quality_10 * 0.10) +
+        (structure_10 * 0.10) +
+        (examples_evidence_10 * 0.05) +
+        (clarity_10 * 0.05) +
+        (conciseness_10 * 0.05) +
+        (professionalism_10 * 0.05)
+    )
+
+    # 11. MANDATORY HARD SCORE CAPS
+    caps = []
+    if answer_relevance <= 1.0:
+        caps.append(1.0)
+    elif answer_relevance <= 2.0:
+        caps.append(2.0)
+    elif answer_relevance <= 3.0:
+        caps.append(3.0)
+    elif answer_relevance <= 5.0:
+        caps.append(5.0)
+
+    if content_coverage < 0.20:
+        caps.append(2.0)
+    elif content_coverage < 0.40:
+        caps.append(4.0)
+
+    if off_topic_ratio > 0.75:
+        caps.append(2.0)
+    elif off_topic_ratio > 0.50:
+        caps.append(4.0)
+
+    if word_count < 4:
+        caps.append(0.0)
+
+    final_score = min([base_score] + caps)
+    final_score = round(max(final_score, 0.0), 1)
 
     # Content vs. Delivery Separation
     content_score = round(
-        ((relevance_5 + completeness_5 + reasoning_5 + examples_5 + explanation_5) / 25.0) * 10.0,
-        1,
+        (answer_relevance * 0.35 + (content_coverage * 10.0) * 0.35 + accuracy_10 * 0.30),
+        1
     )
-    delivery_score = round(
-        ((clarity_5 + conciseness_5 + fluency_5 + grammar_5 + pronunciation_5) / 25.0) * 10.0,
-        1,
-    )
+    if answer_relevance <= 3.0:
+        content_score = min(content_score, 3.0)
 
-    # Observable Strengths & Weaknesses
+    delivery_score = round((clarity_10 * 0.4 + conciseness_10 * 0.3 + professionalism_10 * 0.3), 1)
+
+    # 12. 28 Parameter Map (Scaled to 1-5)
+    rel_5 = max(round(answer_relevance / 2.0, 1), 1.0)
+    acc_5 = max(round(accuracy_10 / 2.0, 1), 1.0)
+    struct_5 = max(round(structure_10 / 2.0, 1), 1.0)
+    comp_5 = max(round((content_coverage * 10.0) / 2.0, 1), 1.0)
+    clar_5 = max(round(clarity_10 / 2.0, 1), 1.0)
+    conc_5 = max(round(conciseness_10 / 2.0, 1), 1.0)
+    prof_5 = max(round(professionalism_10 / 2.0, 1), 1.0)
+    evid_5 = max(round(examples_evidence_10 / 2.0, 1), 1.0)
+    reason_5 = 4.6 if has_diagnostic_reasoning else (3.2 if answered_required >= 1 else 1.2)
+
+    # 13. Dynamic Strengths & Actionable Failure-Aware Feedback
     strengths = []
-    if clarity_5 >= 4.2:
-        strengths.append("Clear, coherent sentence structure and technical articulation.")
-    if examples_5 >= 4.0:
-        strengths.append("Effective use of concrete project context and quantifiable engineering impact.")
-    if reasoning_5 >= 4.0:
-        strengths.append("Solid logical reasoning explaining the 'why' behind architectural choices.")
-    if not strengths:
-        strengths.append("Good baseline comprehension and professional delivery.")
-
     weaknesses = []
-    if conciseness_5 < 3.8:
-        weaknesses.append("Conciseness: Answer contains some repetitive phrases; deliver key points upfront.")
-    if structure_5 < 4.0:
-        weaknesses.append("Structure: Organize response using Situation → Action → Result (STAR) framework.")
-    if examples_5 < 3.8:
-        weaknesses.append("Evidence: Incorporate specific metrics, SLAs, or latency benchmarks from past projects.")
-    if not weaknesses:
-        weaknesses.append("Consider detailing alternative architectural trade-offs to demonstrate senior decision-making.")
 
-    improvement_tip = (
-        "Structure your response with clear milestones: state the problem context, describe your specific technical action, and conclude with the measurable impact or performance result."
-        if category == "behavioral"
-        else "Deepen your technical explanation by explicitly explaining the underlying trade-offs and failure mitigation strategies."
-    )
+    if answer_relevance >= 8.0:
+        strengths.append("Directly addressed the core question with concrete technical and situational context.")
+        if has_concrete_outcome:
+            strengths.append("Included clear, quantifiable outcomes and measurable engineering impact.")
+        if has_star_structure:
+            strengths.append("Structured response logically following Situation → Action → Result.")
+    elif answer_relevance >= 5.0:
+        strengths.append("Partially addressed the topic with good foundational awareness.")
+        weaknesses.append("Answer drifted into generalities; provide a more specific, personal engineering example.")
+    else:
+        weaknesses.append("Answer did not address the required question topic and consisted mainly of generic statements.")
+        weaknesses.append("Missing required technical actions, situation context, and measurable outcomes.")
 
-    feedback = (
-        f"Your response demonstrated good {category.replace('_', ' ')} communication with an overall score of {overall_answer_score}/10.0. "
-        f"Content Score: {content_score}/10.0, Delivery Score: {delivery_score}/10.0."
-    )
+    if answer_relevance <= 3.5:
+        feedback = (
+            "Your speech was understandable, but the answer did not address the question. "
+            f"The prompt asked about '{category.replace('_', ' ')}: {question_text[:70]}...', "
+            "but your response mainly described generic personal qualities without concrete project evidence. "
+            "Please provide a specific example directly addressing the technical or situational prompt."
+        )
+        improvement_tip = "Answer the prompt directly: state the exact problem or situation first, explain your personal technical actions, and conclude with the result."
+    else:
+        feedback = (
+            f"Good {category.replace('_', ' ')} response with an overall score of {final_score}/10.0. "
+            f"Content Relevance: {answer_relevance}/10.0, Content Coverage: {round(content_coverage * 100)}%."
+        )
+        improvement_tip = (
+            "To reach a perfect score, ensure every claim is reinforced with quantifiable production metrics (e.g. latency reductions, SLAs, test coverage)."
+            if has_concrete_outcome
+            else "Add a concrete outcome (e.g. 'reduced latency by 30%', 'prevented downtime') to demonstrate complete results."
+        )
 
     return EvaluateAudioAnswerResponse(
         is_english=True,
         language="English",
         language_confidence=0.98,
         transcript=raw_transcript,
+        answerStatus=answer_status,
+        questionUnderstanding=round(answer_relevance, 1),
+        answerRelevance=round(answer_relevance, 1),
+        contentCoverage=round(content_coverage * 100.0, 1),
+        offTopicRatio=round(off_topic_ratio * 100.0, 1),
+        scores=StrictScoreBreakdown(
+            accuracy=accuracy_10,
+            explanationQuality=explanation_quality_10,
+            structure=structure_10,
+            examplesEvidence=examples_evidence_10,
+            clarity=clarity_10,
+            conciseness=conciseness_10,
+            professionalCommunication=professionalism_10,
+        ),
         parameter_scores=ParameterScores28(
-            clarity=round(clarity_5, 1),
-            relevance=round(relevance_5, 1),
-            structure=round(structure_5, 1),
-            conciseness=round(conciseness_5, 1),
-            completeness=round(completeness_5, 1),
-            listening_comprehension=round(listening_5, 1),
-            confidence=round(confidence_5, 1),
-            vocabulary=round(vocab_5, 1),
-            grammar=round(grammar_5, 1),
-            fluency=round(fluency_5, 1),
-            pronunciation_intelligibility=round(pronunciation_5, 1),
-            pace=round(pace_5, 1),
-            tone=round(tone_5, 1),
-            active_listening=round(active_listening_5, 1),
-            question_handling=round(q_handling_5, 1),
-            explanation_ability=round(explanation_5, 1),
-            use_of_examples=round(examples_5, 1),
-            logical_reasoning=round(reasoning_5, 1),
-            adaptability=round(adaptability_5, 1),
-            non_verbal_communication=None,  # explicitly marked null for audio-only
-            engagement=round(engagement_5, 1),
-            professionalism=round(professionalism_5, 1),
-            self_awareness=round(self_awareness_5, 1),
-            consistency=round(consistency_5, 1),
-            persuasiveness=round(persuasiveness_5, 1),
-            emotional_control=round(emotional_control_5, 1),
-            cultural_sensitivity=round(cultural_sensitivity_5, 1),
-            question_asking=round(question_asking_5, 1),
+            clarity=clar_5,
+            relevance=rel_5,
+            structure=struct_5,
+            conciseness=conc_5,
+            completeness=comp_5,
+            listening_comprehension=rel_5,
+            confidence=4.2 if word_count >= 15 else 3.0,
+            vocabulary=acc_5,
+            grammar=4.5,
+            fluency=4.3 if word_count >= 15 else 3.0,
+            pronunciation_intelligibility=4.5,
+            pace=4.2,
+            tone=4.4,
+            active_listening=rel_5,
+            question_handling=rel_5,
+            explanation_ability=acc_5,
+            use_of_examples=evid_5,
+            logical_reasoning=reason_5,
+            adaptability=4.0,
+            non_verbal_communication=None,
+            engagement=4.2,
+            professionalism=prof_5,
+            self_awareness=3.8 if answered_required >= 2 else 2.0,
+            consistency=4.2,
+            persuasiveness=evid_5,
+            emotional_control=4.5,
+            cultural_sensitivity=4.5,
+            question_asking=4.0,
         ),
         special_scores=SpecialScores(
-            understanding=round(understanding_10, 1),
-            technical_accuracy=round(technical_accuracy_10, 1),
-            simplicity=round(simplicity_10, 1),
-            behavioral_structure=round(behavioral_structure_10, 1),
-            critical_thinking=round(critical_thinking_10, 1),
+            understanding=round(answer_relevance, 1),
+            technical_accuracy=accuracy_10,
+            simplicity=8.5 if (20 <= word_count <= 140) else 7.0,
+            behavioral_structure=structure_10,
+            critical_thinking=reason_5 * 2.0,
         ),
         content_score=content_score,
         delivery_score=delivery_score,
-        overall_score=overall_answer_score,
-        question_understanding=round(question_understanding, 1),
+        overallScore=final_score,
+        overall_score=final_score,
         strengths=strengths,
         weaknesses=weaknesses,
         feedback=feedback,
+        improvementTip=improvement_tip,
         improvement_tip=improvement_tip,
-        model_version="gemini-1.5-flash-audio-v1",
-        rubric_version="rubric-en-28param-v1",
+        model_version="gemini-1.5-flash-strict-v2",
+        rubric_version="rubric-strict-content-first-v2",
     )
+
 
 
 

@@ -318,20 +318,37 @@ export interface SpecialScores {
   critical_thinking: number
 }
 
+export interface StrictScoreBreakdown {
+  accuracy: number
+  explanationQuality: number
+  structure: number
+  examplesEvidence: number
+  clarity: number
+  conciseness: number
+  professionalCommunication: number
+}
+
 export interface EvaluateAudioAnswerResponse {
   is_english: boolean
   language: string
   language_confidence: number
   transcript: string
+  answerStatus?: 'direct' | 'mostly_relevant' | 'partially_relevant' | 'mostly_off_topic' | 'irrelevant' | 'empty' | string
+  questionUnderstanding?: number
+  answerRelevance?: number
+  contentCoverage?: number
+  offTopicRatio?: number
+  scores?: StrictScoreBreakdown
   parameter_scores?: ParameterScores28
   special_scores?: SpecialScores
   content_score?: number
   delivery_score?: number
+  overallScore?: number
   overall_score?: number
-  question_understanding?: number
   strengths: string[]
   weaknesses: string[]
   feedback: string
+  improvementTip?: string
   improvement_tip: string
   model_version: string
   rubric_version: string
@@ -1528,68 +1545,141 @@ export const api = {
       if (!res.ok) throw new Error('API request failed')
       return await res.json()
     } catch {
-      // Deterministic client fallback evaluator
+      // Deterministic client fallback evaluator with strict content-first scoring
       const transcript = (formData.get('transcript_text') as string) ||
-        'I structured the system using modular architectural patterns with comprehensive unit testing, ensuring low latency and reliable service delivery under load.'
+        'In my project, the application suffered from high latency during peak queries. I added composite indexes to PostgreSQL tables and implemented Redis caching, reducing query time by 45%.'
       const category = (formData.get('category') as string) || 'skill'
+      const questionText = (formData.get('question_text') as string) || ''
+
+      const transcriptLower = transcript.toLowerCase()
+      const isGeneric = transcriptLower.includes('hardworking') || transcriptLower.includes('passionate') || transcriptLower.includes('team player')
+      const hasTech = transcriptLower.includes('react') || transcriptLower.includes('postgresql') || transcriptLower.includes('redis') || transcriptLower.includes('latency') || transcriptLower.includes('index') || transcriptLower.includes('log') || transcriptLower.includes('outage')
+      const hasAction = transcriptLower.includes('implemented') || transcriptLower.includes('added') || transcriptLower.includes('identified') || transcriptLower.includes('mitigate') || transcriptLower.includes('resolved')
+      const hasResult = transcriptLower.includes('reducing') || transcriptLower.includes('%') || transcriptLower.includes('faster') || transcriptLower.includes('recovered') || transcriptLower.includes('responsive')
+
+      let answerRelevance = 9.0
+      let contentCoverage = 100.0
+      let offTopicRatio = 5.0
+      let answerStatus: 'direct' | 'mostly_relevant' | 'partially_relevant' | 'mostly_off_topic' | 'irrelevant' | 'empty' = 'direct'
+
+      if (isGeneric && !hasTech && !hasAction) {
+        answerRelevance = 1.0
+        contentCoverage = 0.0
+        offTopicRatio = 95.0
+        answerStatus = 'irrelevant'
+      } else if (!hasTech && !hasAction) {
+        answerRelevance = 2.5
+        contentCoverage = 33.3
+        offTopicRatio = 65.0
+        answerStatus = 'mostly_off_topic'
+      }
+
+      // Base score calculation
+      let finalScore = (
+        (answerRelevance * 0.25) +
+        ((contentCoverage / 10.0) * 0.20) +
+        (9.0 * 0.15) +
+        (8.5 * 0.10) +
+        (8.5 * 0.10) +
+        (9.0 * 0.05) +
+        (8.5 * 0.05) +
+        (8.5 * 0.05) +
+        (9.0 * 0.05)
+      )
+
+      // Apply Mandatory Hard Score Caps
+      if (answerRelevance <= 1.0) finalScore = Math.min(finalScore, 1.0)
+      else if (answerRelevance <= 2.0) finalScore = Math.min(finalScore, 2.0)
+      else if (answerRelevance <= 3.0) finalScore = Math.min(finalScore, 3.0)
+      else if (answerRelevance <= 5.0) finalScore = Math.min(finalScore, 5.0)
+
+      if (contentCoverage < 20.0) finalScore = Math.min(finalScore, 2.0)
+      else if (contentCoverage < 40.0) finalScore = Math.min(finalScore, 4.0)
+
+      if (offTopicRatio > 75.0) finalScore = Math.min(finalScore, 2.0)
+      else if (offTopicRatio > 50.0) finalScore = Math.min(finalScore, 4.0)
+
+      finalScore = Number(finalScore.toFixed(1))
 
       return {
         is_english: true,
         language: 'English',
         language_confidence: 0.98,
         transcript,
+        answerStatus,
+        questionUnderstanding: answerRelevance,
+        answerRelevance,
+        contentCoverage,
+        offTopicRatio,
+        scores: {
+          accuracy: hasTech ? 9.2 : 2.0,
+          explanationQuality: hasAction ? 9.0 : 2.0,
+          structure: (hasAction && hasResult) ? 9.0 : 2.0,
+          examplesEvidence: hasResult ? 9.2 : 2.0,
+          clarity: 9.0,
+          conciseness: 9.0,
+          professionalCommunication: 9.0,
+        },
         parameter_scores: {
-          clarity: 4.3,
-          relevance: 4.5,
-          structure: 4.2,
-          conciseness: 4.1,
-          completeness: 4.4,
-          listening_comprehension: 4.3,
+          clarity: 4.5,
+          relevance: Number((answerRelevance / 2.0).toFixed(1)),
+          structure: 4.5,
+          conciseness: 4.5,
+          completeness: Number(((contentCoverage / 10.0) / 2.0).toFixed(1)),
+          listening_comprehension: Number((answerRelevance / 2.0).toFixed(1)),
           confidence: 4.2,
-          vocabulary: 4.4,
+          vocabulary: hasTech ? 4.6 : 2.0,
           grammar: 4.5,
           fluency: 4.3,
           pronunciation_intelligibility: 4.5,
           pace: 4.2,
           tone: 4.4,
-          active_listening: 4.2,
-          question_handling: 4.3,
-          explanation_ability: 4.4,
-          use_of_examples: 4.2,
-          logical_reasoning: 4.4,
-          adaptability: 4.1,
+          active_listening: Number((answerRelevance / 2.0).toFixed(1)),
+          question_handling: Number((answerRelevance / 2.0).toFixed(1)),
+          explanation_ability: hasTech ? 4.5 : 2.0,
+          use_of_examples: hasResult ? 4.5 : 1.5,
+          logical_reasoning: hasAction ? 4.5 : 1.5,
+          adaptability: 4.0,
           non_verbal_communication: null,
-          engagement: 4.3,
-          professionalism: 4.6,
-          self_awareness: 4.2,
-          consistency: 4.4,
-          persuasiveness: 4.1,
-          emotional_control: 4.6,
+          engagement: 4.2,
+          professionalism: 4.5,
+          self_awareness: 4.0,
+          consistency: 4.2,
+          persuasiveness: hasResult ? 4.5 : 1.5,
+          emotional_control: 4.5,
           cultural_sensitivity: 4.5,
           question_asking: 4.0,
         },
         special_scores: {
-          understanding: 8.8,
-          technical_accuracy: 8.6,
-          simplicity: 8.4,
-          behavioral_structure: 8.5,
-          critical_thinking: 8.6,
+          understanding: answerRelevance,
+          technical_accuracy: hasTech ? 9.2 : 2.0,
+          simplicity: 8.5,
+          behavioral_structure: (hasAction && hasResult) ? 9.0 : 2.0,
+          critical_thinking: hasAction ? 9.0 : 2.0,
         },
-        content_score: 8.6,
-        delivery_score: 8.4,
-        overall_score: 8.5,
-        question_understanding: 8.8,
-        strengths: [
-          'Clear articulation of key technical decisions and architectural rationale.',
-          'Solid inclusion of production engineering context and reliability requirements.',
-        ],
-        weaknesses: [
-          'Consider concluding with quantifiable metrics (e.g. latency reduction percentages, SLA uptime).',
-        ],
-        feedback: `Your response demonstrated good ${category.replace('_', ' ')} communication with an overall score of 8.5/10.0.`,
-        improvement_tip: 'Structure your response using Situation → Action → Result (STAR) to clearly highlight the business and technical impact.',
-        model_version: 'gemini-1.5-flash-audio-v1',
-        rubric_version: 'rubric-en-28param-v1',
+        content_score: Number((answerRelevance * 0.35 + (contentCoverage / 10.0) * 0.35 + (hasTech ? 9.2 : 2.0) * 0.30).toFixed(1)),
+        delivery_score: 8.8,
+        overallScore: finalScore,
+        overall_score: finalScore,
+        strengths: answerRelevance >= 8.0 ? [
+          'Directly addressed the core question with concrete technical context.',
+          'Included clear quantifiable results and measurable engineering impact.',
+        ] : [],
+        weaknesses: answerRelevance < 5.0 ? [
+          'Answer did not address the required question topic and consisted mainly of generic statements.',
+          'Missing required technical actions, situation context, and measurable outcomes.',
+        ] : [],
+        feedback: answerRelevance <= 3.5 ? (
+          `Your speech was understandable, but the answer did not address the question. The prompt asked about '${category.replace('_', ' ')}: ${questionText.slice(0, 70)}...', but your response mainly described generic personal qualities without concrete project evidence.`
+        ) : `Good ${category.replace('_', ' ')} response with an overall score of ${finalScore}/10.0.`,
+        improvementTip: answerRelevance <= 3.5
+          ? 'Answer the prompt directly: state the exact problem or situation first, explain your personal technical actions, and conclude with the result.'
+          : 'To reach a perfect score, ensure every claim is reinforced with quantifiable production metrics.',
+        improvement_tip: answerRelevance <= 3.5
+          ? 'Answer the prompt directly: state the exact problem or situation first, explain your personal technical actions, and conclude with the result.'
+          : 'To reach a perfect score, ensure every claim is reinforced with quantifiable production metrics.',
+        model_version: 'gemini-1.5-flash-strict-v2',
+        rubric_version: 'rubric-strict-content-first-v2',
       }
     }
   },

@@ -15,6 +15,7 @@ import {
   type EvaluateAudioAnswerResponse,
   type ParameterScores28,
   type SpecialScores,
+  type StrictScoreBreakdown,
 } from '@/lib/api'
 import {
   Mic,
@@ -35,9 +36,9 @@ import {
   ChevronDown,
   ChevronUp,
   Brain,
-  MessageSquare,
   Zap,
   BookOpen,
+  Target,
 } from 'lucide-react'
 
 interface AnswerRecord {
@@ -47,9 +48,14 @@ interface AnswerRecord {
   transcript: string
   audioUrl?: string
   audioPath?: string
+  answerStatus?: string
+  answerRelevance: number
+  contentCoverage: number
+  offTopicRatio: number
   overallScore: number
   contentScore: number
   deliveryScore: number
+  scores?: StrictScoreBreakdown
   parameterScores?: ParameterScores28
   specialScores?: SpecialScores
   strengths: string[]
@@ -200,8 +206,8 @@ export default function AudioInterviewPage() {
                 target_role: targetJobTitle,
                 resume_version: 'Primary Tailored Profile',
                 status: 'in_progress',
-                model_version: 'gemini-1.5-flash-audio-v1',
-                rubric_version: 'rubric-en-28param-v1',
+                model_version: 'gemini-1.5-flash-strict-v2',
+                rubric_version: 'rubric-strict-content-first-v2',
               },
             ])
             .select()
@@ -402,15 +408,20 @@ export default function AudioInterviewPage() {
         transcript: result.transcript,
         audioUrl: audioUrl || undefined,
         audioPath: audioStoragePath || undefined,
-        overallScore: result.overall_score || 8.0,
+        answerStatus: result.answerStatus,
+        answerRelevance: result.answerRelevance ?? 8.0,
+        contentCoverage: result.contentCoverage ?? 100.0,
+        offTopicRatio: result.offTopicRatio ?? 0.0,
+        overallScore: result.overallScore ?? result.overall_score ?? 8.0,
         contentScore: result.content_score || 8.2,
         deliveryScore: result.delivery_score || 8.0,
+        scores: result.scores,
         parameterScores: result.parameter_scores,
         specialScores: result.special_scores,
         strengths: result.strengths || [],
         weaknesses: result.weaknesses || [],
         feedback: result.feedback,
-        improvementTip: result.improvement_tip,
+        improvementTip: result.improvementTip || result.improvement_tip,
       }
 
       setEvaluatedAnswers((prev) => [...prev.filter((p) => p.questionNumber !== currentQ.question_number), answerRecord])
@@ -436,11 +447,11 @@ export default function AudioInterviewPage() {
               language_confidence: result.language_confidence,
               content_score: result.content_score || 8.0,
               delivery_score: result.delivery_score || 8.0,
-              overall_score: result.overall_score || 8.0,
+              overall_score: result.overallScore ?? result.overall_score ?? 8.0,
               parameter_scores: result.parameter_scores,
               special_scores: result.special_scores,
               feedback: result.feedback,
-              improvement_tip: result.improvement_tip,
+              improvement_tip: result.improvementTip || result.improvement_tip,
               strengths: result.strengths,
               weaknesses: result.weaknesses,
             },
@@ -493,7 +504,7 @@ export default function AudioInterviewPage() {
 
     const finalOverall = Number(((avgSkill + avgBeh + avgCrit) / 3).toFixed(1))
 
-    // Soft-skills & English communication composite scores
+    // Composite Scores
     const softSkillsScore = Number((avgBeh * 0.5 + avgCrit * 0.3 + avgSkill * 0.2).toFixed(1))
     const englishScore = Number((evaluatedAnswers.reduce((s, a) => s + a.deliveryScore, 0) / Math.max(evaluatedAnswers.length, 1)).toFixed(1))
     const explanationScore = Number((evaluatedAnswers.reduce((s, a) => s + a.contentScore, 0) / Math.max(evaluatedAnswers.length, 1)).toFixed(1))
@@ -536,6 +547,24 @@ export default function AudioInterviewPage() {
       .padStart(2, '0')
     const s = (secs % 60).toString().padStart(2, '0')
     return `${m}:${s}`
+  }
+
+  // Helper for answer status badge styling
+  const getStatusBadge = (status?: string) => {
+    switch (status) {
+      case 'direct':
+        return <Badge variant="success">Direct Answer (High Relevance)</Badge>
+      case 'mostly_relevant':
+        return <Badge variant="info">Mostly Relevant</Badge>
+      case 'partially_relevant':
+        return <Badge variant="warning">Partially Relevant</Badge>
+      case 'mostly_off_topic':
+        return <Badge variant="danger">Mostly Off-Topic (Capped)</Badge>
+      case 'irrelevant':
+        return <Badge variant="danger">Irrelevant / Generic (Hard Cap Applied)</Badge>
+      default:
+        return <Badge variant="neutral">Empty Answer</Badge>
+    }
   }
 
   // Calculate Average of 28 Parameters for Final Report
@@ -590,7 +619,7 @@ export default function AudioInterviewPage() {
     <div className="space-y-8 animate-fade-in pb-16 text-white max-w-5xl mx-auto">
       <PageHeader
         title="AI Audio Communication Interview Practice Room"
-        subtitle="15-question spoken interview evaluating 28 observable communication parameters, STAR storytelling, and critical thinking."
+        subtitle="15-question spoken interview evaluating strict content relevance, STAR storytelling, and critical thinking."
         actions={
           <Link to="/candidate/dashboard">
             <Button variant="outline" size="sm" className="text-xs cursor-pointer">
@@ -604,12 +633,12 @@ export default function AudioInterviewPage() {
       {!hasConsented && (
         <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 space-y-3">
           <div className="flex items-center gap-2 text-rose-400 font-bold text-sm">
-            <ShieldCheck className="h-5 w-5 text-emerald-400" /> Privacy & Practice Evaluation Notice
+            <ShieldCheck className="h-5 w-5 text-emerald-400" /> Content-First Evaluation & Privacy Notice
           </div>
           <p className="text-xs text-neutral-300 leading-relaxed">
-            This practice session records your voice to evaluate 28 observable communication parameters (clarity, relevance, structure, conciseness, reasoning, fluency, etc.).
-            <strong> Non-verbal traits (eye contact, facial posture) are strictly marked unavailable for audio-only sessions.</strong>
-            Accent, ethnicity, pitch, and protected demographic traits are strictly <strong>never scored or inferred</strong>.
+            This system enforces <strong>strict content-first scoring</strong>: fluency, speaking duration, and confidence
+            <strong> cannot compensate for an irrelevant answer</strong>. Questions require concrete project evidence, technical details,
+            and Situation → Action → Result structure. Non-verbal traits are marked unavailable for audio sessions, and accent/protected traits are strictly never scored.
           </p>
           <div className="flex justify-end pt-1">
             <Button size="sm" onClick={() => setHasConsented(true)} className="text-xs cursor-pointer gap-1.5 font-bold">
@@ -702,7 +731,7 @@ export default function AudioInterviewPage() {
               {currentQ?.expected_topics && (
                 <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1.5 text-xs">
                   <span className="text-[10px] font-bold uppercase text-neutral-400 flex items-center gap-1">
-                    <HelpCircle className="h-3.5 w-3.5 text-orange-400" /> Key Discussion Focus Areas
+                    <HelpCircle className="h-3.5 w-3.5 text-orange-400" /> Required Content Elements
                   </span>
                   <div className="flex flex-wrap gap-1.5">
                     {currentQ.expected_topics.map((t: string, i: number) => (
@@ -731,10 +760,10 @@ export default function AudioInterviewPage() {
                     </div>
                     <div className="space-y-1">
                       <p className="text-orange-400 font-extrabold text-sm tracking-wider uppercase">
-                        Analyzing Spoken Answer...
+                        Analyzing Content & Relevance...
                       </p>
                       <p className="text-xs text-neutral-400">
-                        Transcribing English speech, separating Content vs Delivery, and evaluating 28 parameters.
+                        Checking question intent, required elements coverage, off-topic ratio, and applying hard score caps.
                       </p>
                     </div>
                   </div>
@@ -789,7 +818,7 @@ export default function AudioInterviewPage() {
                     <div className="space-y-1">
                       <div className="flex items-center justify-center gap-2 text-rose-400 font-extrabold text-xs tracking-wider uppercase">
                         <span className="inline-block w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
-                        <span>Recording in English...</span>
+                        <span>Recording English Answer...</span>
                       </div>
                       <p className="text-2xl font-mono font-bold text-white">{formatTime(recordingSeconds)}</p>
                     </div>
@@ -810,7 +839,7 @@ export default function AudioInterviewPage() {
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs text-neutral-300 font-semibold">Speak your answer clearly into your microphone</p>
-                      <p className="text-[11px] text-neutral-500">Record a 30–90 second answer covering the situation, actions, and results.</p>
+                      <p className="text-[11px] text-neutral-500">Provide specific technical context, problem details, actions, and results.</p>
                     </div>
                     <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                       <Button
@@ -875,40 +904,56 @@ export default function AudioInterviewPage() {
             </Card>
           </div>
 
-          {/* Right Column: Instant Feedback & 28-Parameter Card */}
+          {/* Right Column: Instant Feedback & Strict Content Card */}
           <div className="space-y-6">
             {currentEvaluation ? (
               <Card className="p-6 border-white/10 space-y-4 animate-fade-in">
                 <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
                   <div>
-                    <span className="text-[10px] font-bold uppercase text-neutral-400 block">Question Score</span>
+                    <div className="mb-1">{getStatusBadge(currentEvaluation.answerStatus)}</div>
                     <h4 className="text-2xl font-extrabold text-white">
-                      {currentEvaluation.overall_score} <span className="text-xs text-neutral-500">/ 10.0</span>
+                      {currentEvaluation.overallScore ?? currentEvaluation.overall_score} <span className="text-xs text-neutral-500">/ 10.0</span>
                     </h4>
                   </div>
-                  <ScoreRing score={Math.round((currentEvaluation.overall_score || 8.0) * 10)} size="sm" />
+                  <ScoreRing score={Math.round((currentEvaluation.overallScore ?? currentEvaluation.overall_score ?? 8.0) * 10)} size="sm" />
                 </div>
 
-                {/* Content vs. Delivery Separation */}
-                <div className="grid grid-cols-2 gap-2 text-center text-xs">
+                {/* Hard Score Cap Alert if Irrelevant */}
+                {(currentEvaluation.answerRelevance ?? 10) <= 3.5 && (
+                  <div className="p-3 rounded-xl bg-rose-950/70 border border-rose-500/40 text-[11px] text-rose-200 flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="text-white block font-bold">Hard Score Cap Applied</strong>
+                      <span>The answer was off-topic or generic. Fluency and delivery cannot override missing question content.</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Content-First Metrics */}
+                <div className="grid grid-cols-3 gap-2 text-center text-xs">
                   <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/10">
-                    <span className="text-[10px] text-rose-400 font-bold uppercase block">Content Score</span>
-                    <strong className="text-base text-white">{currentEvaluation.content_score || 8.5}/10</strong>
+                    <span className="text-[10px] text-rose-400 font-bold uppercase block">Relevance</span>
+                    <strong className="text-sm text-white">{currentEvaluation.answerRelevance ?? 8.0}/10</strong>
                   </div>
                   <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/10">
-                    <span className="text-[10px] text-orange-400 font-bold uppercase block">Delivery Score</span>
-                    <strong className="text-base text-white">{currentEvaluation.delivery_score || 8.2}/10</strong>
+                    <span className="text-[10px] text-orange-400 font-bold uppercase block">Coverage</span>
+                    <strong className="text-sm text-white">{currentEvaluation.contentCoverage ?? 100}%</strong>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/10">
+                    <span className="text-[10px] text-purple-400 font-bold uppercase block">Off-Topic</span>
+                    <strong className="text-sm text-white">{currentEvaluation.offTopicRatio ?? 0}%</strong>
                   </div>
                 </div>
 
-                {/* Key Parameter Scores */}
-                {currentEvaluation.parameter_scores && (
+                {/* Strict Base Scores Breakdown */}
+                {currentEvaluation.scores && (
                   <div className="space-y-2 text-xs">
-                    <ScoreBar label="Clarity (1-5)" score={Math.round((currentEvaluation.parameter_scores.clarity / 5) * 100)} />
-                    <ScoreBar label="Relevance (1-5)" score={Math.round((currentEvaluation.parameter_scores.relevance / 5) * 100)} />
-                    <ScoreBar label="Structure & STAR (1-5)" score={Math.round((currentEvaluation.parameter_scores.structure / 5) * 100)} />
-                    <ScoreBar label="Logical Reasoning (1-5)" score={Math.round((currentEvaluation.parameter_scores.logical_reasoning / 5) * 100)} />
-                    <ScoreBar label="Conciseness (1-5)" score={Math.round((currentEvaluation.parameter_scores.conciseness / 5) * 100)} />
+                    <ScoreBar label="Question Relevance (25%)" score={Math.round((currentEvaluation.answerRelevance ?? 8.0) * 10)} />
+                    <ScoreBar label="Content Coverage (20%)" score={Math.round(currentEvaluation.contentCoverage ?? 100)} />
+                    <ScoreBar label="Technical Accuracy (15%)" score={Math.round(currentEvaluation.scores.accuracy * 10)} />
+                    <ScoreBar label="Explanation Quality (10%)" score={Math.round(currentEvaluation.scores.explanationQuality * 10)} />
+                    <ScoreBar label="Structure & STAR (10%)" score={Math.round(currentEvaluation.scores.structure * 10)} />
+                    <ScoreBar label="Examples & Evidence (5%)" score={Math.round(currentEvaluation.scores.examplesEvidence * 10)} />
                   </div>
                 )}
 
@@ -963,7 +1008,7 @@ export default function AudioInterviewPage() {
                   <div className="font-bold text-rose-400 flex items-center gap-1.5">
                     <Lightbulb className="h-4 w-4" /> Improvement Strategy
                   </div>
-                  <p className="text-neutral-300 leading-relaxed text-[11px]">{currentEvaluation.improvement_tip}</p>
+                  <p className="text-neutral-300 leading-relaxed text-[11px]">{currentEvaluation.improvementTip || currentEvaluation.improvement_tip}</p>
                 </div>
 
                 <Button onClick={handleNextQuestion} className="w-full gap-1.5 text-xs font-bold cursor-pointer">
@@ -984,7 +1029,7 @@ export default function AudioInterviewPage() {
                 <div className="space-y-1">
                   <h4 className="text-sm font-bold text-white">No Evaluation Yet</h4>
                   <p className="text-xs text-neutral-400">
-                    Record your English spoken answer to receive real-time 28-parameter communication feedback.
+                    Record your English spoken answer to receive real-time content relevance, coverage, and communication feedback.
                   </p>
                 </div>
               </Card>
@@ -1003,7 +1048,7 @@ export default function AudioInterviewPage() {
                   Interview Communication Report
                 </h2>
                 <p className="text-xs text-neutral-300">
-                  Comprehensive 15-question synthesis across 28 observable parameters, technical depth, and reasoning.
+                  Comprehensive 15-question synthesis evaluated under strict content-first relevance and accuracy standards.
                 </p>
               </div>
 
@@ -1099,15 +1144,15 @@ export default function AudioInterviewPage() {
               <ul className="space-y-2 text-xs text-neutral-300">
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-400 mt-0.5">•</span>
-                  <span>Clear and direct articulation of technical architectural concepts.</span>
+                  <span>Directly addressed core technical questions with concrete architecture context.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-400 mt-0.5">•</span>
-                  <span>Effective use of concrete project context and engineering trade-offs.</span>
+                  <span>Effective use of quantifiable metrics and engineering trade-offs.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-400 mt-0.5">•</span>
-                  <span>Consistent professional tone, vocabulary, and constructive posture.</span>
+                  <span>Structured problem-solving following Situation → Action → Result.</span>
                 </li>
               </ul>
             </Card>
@@ -1179,7 +1224,7 @@ export default function AudioInterviewPage() {
               </span>
               <h3 className="text-lg font-bold text-white">Practice Your Weak Areas</h3>
               <p className="text-xs text-neutral-300">
-                Launch focused 3-question drill sessions targeting your identified communication growth areas.
+                Launch focused 3-question drill sessions targeting your identified growth areas.
               </p>
             </div>
 
@@ -1191,14 +1236,14 @@ export default function AudioInterviewPage() {
                   setCurrentIndex(0);
                   setEvaluatedAnswers([]);
                   setIsSessionComplete(false);
-                  setSessionId(`session-drill-conciseness-${Date.now()}`);
+                  setSessionId(`session-drill-relevance-${Date.now()}`);
                 }}
                 className="p-3 h-auto text-left flex flex-col items-start gap-1 cursor-pointer hover:border-rose-500/50"
               >
                 <div className="flex items-center gap-1.5 font-bold text-xs text-white">
-                  <MessageSquare className="h-3.5 w-3.5 text-rose-400" /> Conciseness Drill
+                  <Target className="h-3.5 w-3.5 text-rose-400" /> Direct Content Drill
                 </div>
-                <span className="text-[11px] text-neutral-400">Practice 30-second high-impact answers.</span>
+                <span className="text-[11px] text-neutral-400">Eliminate filler and answer the core question directly.</span>
               </Button>
 
               <Button
@@ -1250,12 +1295,15 @@ export default function AudioInterviewPage() {
                 <div key={ans.questionNumber} className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-2 text-xs">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <span className="text-[10px] font-bold uppercase text-rose-400">
-                        Q{ans.questionNumber} • {ans.category}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold uppercase text-rose-400">
+                          Q{ans.questionNumber} • {ans.category}
+                        </span>
+                        {getStatusBadge(ans.answerStatus)}
+                      </div>
                       <h4 className="font-bold text-white text-sm mt-0.5">{ans.questionText}</h4>
                     </div>
-                    <Badge variant={ans.overallScore >= 8.0 ? 'success' : 'warning'}>
+                    <Badge variant={ans.overallScore >= 8.0 ? 'success' : (ans.overallScore >= 5.0 ? 'warning' : 'danger')}>
                       {ans.overallScore} / 10.0
                     </Badge>
                   </div>
@@ -1265,8 +1313,10 @@ export default function AudioInterviewPage() {
                   </p>
 
                   <div className="flex items-center justify-between text-[11px] text-neutral-400 pt-1">
-                    <span><strong>Content:</strong> {ans.contentScore}/10</span>
-                    <span><strong>Delivery:</strong> {ans.deliveryScore}/10</span>
+                    <span><strong>Relevance:</strong> {ans.answerRelevance}/10</span>
+                    <span><strong>Coverage:</strong> {ans.contentCoverage}%</span>
+                    <span><strong>Content Score:</strong> {ans.contentScore}/10</span>
+                    <span><strong>Delivery Score:</strong> {ans.deliveryScore}/10</span>
                     {ans.audioUrl && <audio src={ans.audioUrl} controls className="h-7 max-w-xs" />}
                   </div>
 
