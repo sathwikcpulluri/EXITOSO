@@ -342,16 +342,35 @@ export interface EvaluateAudioAnswerResponse {
   englishLanguageScore?: number
   answerStatus?: 'direct' | 'mostly_relevant' | 'partially_relevant' | 'mostly_off_topic' | 'irrelevant' | 'empty' | string
   questionUnderstanding?: number
+  relevance?: number
   answerRelevance?: number
   contentCoverage?: number
   offTopicRatio?: number
-  scores?: StrictScoreBreakdown
-  parameter_scores?: ParameterScores28
-  special_scores?: SpecialScores
-  content_score?: number
-  delivery_score?: number
+
+  // 8 Core Parameters (0-10)
+  accuracy?: number
+  explanationQuality?: number
+  confidence?: number
+  clarity?: number
+  fluency?: number
+  professionalism?: number
+
+  // Speech Analysis Metrics
+  fillerWordCount?: number
+  fillerRate?: number
+  repetitionCount?: number
+  averagePauseDuration?: number
+  longPauseCount?: number
+
+  baseScore?: number
+  finalScore?: number
   overallScore?: number
   overall_score?: number
+  content_score?: number
+  delivery_score?: number
+
+  parameter_scores?: ParameterScores28
+  special_scores?: SpecialScores
   strengths: string[]
   weaknesses: string[]
   feedback: string
@@ -1666,6 +1685,28 @@ export const api = {
       }
 
       const transcriptLower = transcript.toLowerCase()
+      const words = transcript.split(/\s+/).filter(Boolean)
+      const wordCount = words.length
+
+      // 1. Speech Analysis & Fillers
+      const speechFillerPatterns = [
+        /\b(um|uh|uhm|erm|er)\b/g,
+        /\b(you\s+know)\b/g,
+        /\b(like)\b(?=\s+(i|we|it|so|and|the|a|to|uh|um))/g,
+        /\b(basically|actually|literally)\b/g
+      ]
+      let fillerWordCount = 0
+      for (const pat of speechFillerPatterns) {
+        const m = transcriptLower.match(pat)
+        if (m) fillerWordCount += m.length
+      }
+      const fillerRate = Number(((fillerWordCount / Math.max(wordCount, 1)) * 100).toFixed(1))
+
+      const repMatches = transcriptLower.match(/\b(\w+)\s+\1\b/g)
+      const repetitionCount = repMatches ? repMatches.length : 0
+      const averagePauseDuration = Number(Math.min(Math.max(0.4 + (fillerWordCount * 0.12) + (repetitionCount * 0.15), 0.4), 2.2).toFixed(1))
+      const longPauseCount = Math.min(Math.max(Math.floor(fillerWordCount / 3) + repetitionCount, 0), 6)
+
       const isGeneric = transcriptLower.includes('hardworking') || transcriptLower.includes('passionate') || transcriptLower.includes('team player')
       const hasTech = transcriptLower.includes('react') || transcriptLower.includes('postgresql') || transcriptLower.includes('redis') || transcriptLower.includes('latency') || transcriptLower.includes('index') || transcriptLower.includes('log') || transcriptLower.includes('outage')
       const hasAction = transcriptLower.includes('implemented') || transcriptLower.includes('added') || transcriptLower.includes('identified') || transcriptLower.includes('mitigate') || transcriptLower.includes('resolved')
@@ -1688,31 +1729,46 @@ export const api = {
         answerStatus = 'mostly_off_topic'
       }
 
+      // 8 Core Parameters (0-10)
+      const p_relevance = answerRelevance
+      const p_content = Number((contentCoverage / 10.0).toFixed(1))
+      const p_accuracy = hasTech ? 9.5 : (hasAction ? 7.0 : 2.0)
+      const p_explanation = (hasAction && hasTech) ? 9.2 : (hasAction ? 7.5 : 2.0)
+
+      const uncertaintyMatches = transcriptLower.match(/\b(i\s+don'?t\s+know|maybe|probably|i\s+guess|perhaps|sorry|apologies)\b/g)
+      const uncertaintyCount = uncertaintyMatches ? uncertaintyMatches.length : 0
+      const p_confidence = uncertaintyCount === 0 && wordCount >= 15 ? 9.5 : (uncertaintyCount <= 1 ? 8.5 : 5.5)
+
+      const p_clarity = wordCount >= 15 && fillerWordCount <= 2 ? 9.4 : (wordCount >= 10 ? 8.0 : 5.0)
+      const p_fluency = fillerWordCount <= 1 && repetitionCount === 0 ? 9.6 : (fillerWordCount <= 3 ? 8.0 : (fillerWordCount <= 6 ? 6.0 : 3.5))
+      const p_professionalism = 9.5
+
       // Base score calculation
-      let finalScore = (
-        (answerRelevance * 0.25) +
-        ((contentCoverage / 10.0) * 0.20) +
-        (9.0 * 0.15) +
-        (8.5 * 0.10) +
-        (8.5 * 0.10) +
-        (9.0 * 0.05) +
-        (8.5 * 0.05) +
-        (8.5 * 0.05) +
-        (9.0 * 0.05)
+      let baseScore = (
+        (p_relevance * 0.25) +
+        (p_content * 0.20) +
+        (p_accuracy * 0.15) +
+        (p_explanation * 0.10) +
+        (p_confidence * 0.10) +
+        (p_clarity * 0.10) +
+        (p_fluency * 0.05) +
+        (p_professionalism * 0.05)
       )
 
       // Apply Mandatory Hard Score Caps
-      if (answerRelevance <= 1.0) finalScore = Math.min(finalScore, 1.0)
-      else if (answerRelevance <= 2.0) finalScore = Math.min(finalScore, 2.0)
-      else if (answerRelevance <= 3.0) finalScore = Math.min(finalScore, 3.0)
-      else if (answerRelevance <= 5.0) finalScore = Math.min(finalScore, 5.0)
+      let finalScore = baseScore
+      if (p_relevance <= 1.0) finalScore = Math.min(finalScore, 1.0)
+      else if (p_relevance <= 2.0) finalScore = Math.min(finalScore, 2.0)
+      else if (p_relevance <= 3.0) finalScore = Math.min(finalScore, 3.0)
+      else if (p_relevance <= 5.0) finalScore = Math.min(finalScore, 5.0)
 
-      if (contentCoverage < 20.0) finalScore = Math.min(finalScore, 2.0)
-      else if (contentCoverage < 40.0) finalScore = Math.min(finalScore, 4.0)
+      if (p_content < 2.0) finalScore = Math.min(finalScore, 2.0)
+      else if (p_content < 4.0) finalScore = Math.min(finalScore, 4.0)
 
-      if (offTopicRatio > 75.0) finalScore = Math.min(finalScore, 2.0)
-      else if (offTopicRatio > 50.0) finalScore = Math.min(finalScore, 4.0)
+      if (answerStatus === 'irrelevant') finalScore = Math.min(finalScore, 2.0)
+      if (wordCount < 4) finalScore = 0.0
 
+      baseScore = Number(baseScore.toFixed(1))
       finalScore = Number(finalScore.toFixed(1))
 
       return {
@@ -1728,79 +1784,84 @@ export const api = {
         transcript,
         englishLanguageScore: 10.0,
         answerStatus,
-        questionUnderstanding: answerRelevance,
-        answerRelevance,
+        questionUnderstanding: p_relevance,
+        relevance: p_relevance,
+        answerRelevance: p_relevance,
         contentCoverage,
         offTopicRatio,
-        scores: {
-          accuracy: hasTech ? 9.2 : 2.0,
-          explanationQuality: hasAction ? 9.0 : 2.0,
-          structure: (hasAction && hasResult) ? 9.0 : 2.0,
-          examplesEvidence: hasResult ? 9.2 : 2.0,
-          clarity: 9.0,
-          conciseness: 9.0,
-          professionalCommunication: 9.0,
-        },
+        accuracy: p_accuracy,
+        explanationQuality: p_explanation,
+        confidence: p_confidence,
+        clarity: p_clarity,
+        fluency: p_fluency,
+        professionalism: p_professionalism,
+        fillerWordCount,
+        fillerRate,
+        repetitionCount,
+        averagePauseDuration,
+        longPauseCount,
+        baseScore,
+        finalScore,
+        overallScore: finalScore,
+        overall_score: finalScore,
+        content_score: Number((p_relevance * 0.35 + p_content * 0.35 + p_accuracy * 0.30).toFixed(1)),
+        delivery_score: Number((p_clarity * 0.35 + p_confidence * 0.35 + p_fluency * 0.15 + p_professionalism * 0.15).toFixed(1)),
         parameter_scores: {
-          clarity: 4.5,
-          relevance: Number((answerRelevance / 2.0).toFixed(1)),
-          structure: 4.5,
-          conciseness: 4.5,
-          completeness: Number(((contentCoverage / 10.0) / 2.0).toFixed(1)),
-          listening_comprehension: Number((answerRelevance / 2.0).toFixed(1)),
-          confidence: 4.2,
-          vocabulary: hasTech ? 4.6 : 2.0,
+          clarity: Number((p_clarity / 2.0).toFixed(1)),
+          relevance: Number((p_relevance / 2.0).toFixed(1)),
+          structure: Number((p_explanation / 2.0).toFixed(1)),
+          conciseness: Number((p_clarity / 2.0).toFixed(1)),
+          completeness: Number((p_content / 2.0).toFixed(1)),
+          listening_comprehension: Number((p_relevance / 2.0).toFixed(1)),
+          confidence: Number((p_confidence / 2.0).toFixed(1)),
+          vocabulary: Number((p_accuracy / 2.0).toFixed(1)),
           grammar: 4.5,
-          fluency: 4.3,
+          fluency: Number((p_fluency / 2.0).toFixed(1)),
           pronunciation_intelligibility: 4.5,
           pace: 4.2,
           tone: 4.4,
-          active_listening: Number((answerRelevance / 2.0).toFixed(1)),
-          question_handling: Number((answerRelevance / 2.0).toFixed(1)),
-          explanation_ability: hasTech ? 4.5 : 2.0,
-          use_of_examples: hasResult ? 4.5 : 1.5,
-          logical_reasoning: hasAction ? 4.5 : 1.5,
+          active_listening: Number((p_relevance / 2.0).toFixed(1)),
+          question_handling: Number((p_relevance / 2.0).toFixed(1)),
+          explanation_ability: Number((p_explanation / 2.0).toFixed(1)),
+          use_of_examples: hasResult ? 4.5 : 2.0,
+          logical_reasoning: Number((p_explanation / 2.0).toFixed(1)),
           adaptability: 4.0,
           non_verbal_communication: null,
           engagement: 4.2,
-          professionalism: 4.5,
+          professionalism: Number((p_professionalism / 2.0).toFixed(1)),
           self_awareness: 4.0,
           consistency: 4.2,
-          persuasiveness: hasResult ? 4.5 : 1.5,
+          persuasiveness: hasResult ? 4.5 : 2.0,
           emotional_control: 4.5,
           cultural_sensitivity: 4.5,
           question_asking: 4.0,
         },
         special_scores: {
-          understanding: answerRelevance,
-          technical_accuracy: hasTech ? 9.2 : 2.0,
-          simplicity: 8.5,
-          behavioral_structure: (hasAction && hasResult) ? 9.0 : 2.0,
-          critical_thinking: hasAction ? 9.0 : 2.0,
+          understanding: p_relevance,
+          technical_accuracy: p_accuracy,
+          simplicity: p_clarity,
+          behavioral_structure: p_explanation,
+          critical_thinking: p_explanation,
         },
-        content_score: Number((answerRelevance * 0.35 + (contentCoverage / 10.0) * 0.35 + (hasTech ? 9.2 : 2.0) * 0.30).toFixed(1)),
-        delivery_score: 8.8,
-        overallScore: finalScore,
-        overall_score: finalScore,
-        strengths: answerRelevance >= 8.0 ? [
+        strengths: p_relevance >= 8.0 ? [
           'Directly addressed the core question with concrete technical context.',
           'Included clear quantifiable results and measurable engineering impact.',
         ] : [],
-        weaknesses: answerRelevance < 5.0 ? [
+        weaknesses: p_relevance < 5.0 ? [
           'Answer did not address the required question topic and consisted mainly of generic statements.',
           'Missing required technical actions, situation context, and measurable outcomes.',
-        ] : [],
-        feedback: answerRelevance <= 3.5 ? (
+        ] : (fillerWordCount >= 5 ? [`Detected ${fillerWordCount} speech fillers ('um', 'uh', 'like'). Try pausing briefly.`] : []),
+        feedback: p_relevance <= 3.5 ? (
           `English verified (Confidence: 98%). Your speech was understandable, but the answer did not address the question. The prompt asked about '${category.replace('_', ' ')}: ${questionText.slice(0, 70)}...', but your response mainly described generic personal qualities without concrete project evidence.`
         ) : `English verified (Confidence: 98%). Good ${category.replace('_', ' ')} response with an overall score of ${finalScore}/10.0.`,
-        improvementTip: answerRelevance <= 3.5
+        improvementTip: p_relevance <= 3.5
           ? 'Answer the prompt directly: state the exact problem or situation first, explain your personal technical actions, and conclude with the result.'
-          : 'To reach a perfect score, ensure every claim is reinforced with quantifiable production metrics.',
-        improvement_tip: answerRelevance <= 3.5
+          : 'To reach a perfect score, reduce unnecessary fillers and ensure claims are reinforced with quantifiable production metrics.',
+        improvement_tip: p_relevance <= 3.5
           ? 'Answer the prompt directly: state the exact problem or situation first, explain your personal technical actions, and conclude with the result.'
-          : 'To reach a perfect score, ensure every claim is reinforced with quantifiable production metrics.',
-        model_version: 'gemini-1.5-flash-language-first-v3',
-        rubric_version: 'rubric-language-first-v3',
+          : 'To reach a perfect score, reduce unnecessary fillers and ensure claims are reinforced with quantifiable production metrics.',
+        model_version: 'gemini-1.5-flash-speech-v4',
+        rubric_version: 'rubric-confidence-clarity-fluency-v4',
       }
     }
   },

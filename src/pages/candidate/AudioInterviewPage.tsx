@@ -15,7 +15,6 @@ import {
   type EvaluateAudioAnswerResponse,
   type ParameterScores28,
   type SpecialScores,
-  type StrictScoreBreakdown,
 } from '@/lib/api'
 import {
   Mic,
@@ -53,10 +52,19 @@ interface AnswerRecord {
   answerRelevance: number
   contentCoverage: number
   offTopicRatio: number
+  accuracy?: number
+  explanationQuality?: number
+  confidence?: number
+  clarity?: number
+  fluency?: number
+  professionalism?: number
+  fillerWordCount?: number
+  fillerRate?: number
+  repetitionCount?: number
+  longPauseCount?: number
   overallScore: number
   contentScore: number
   deliveryScore: number
-  scores?: StrictScoreBreakdown
   parameterScores?: ParameterScores28
   specialScores?: SpecialScores
   strengths: string[]
@@ -449,13 +457,22 @@ export default function AudioInterviewPage() {
         audioUrl: audioUrl || undefined,
         audioPath: audioStoragePath || undefined,
         answerStatus: result.answerStatus,
-        answerRelevance: result.answerRelevance ?? 8.0,
+        answerRelevance: result.relevance ?? result.answerRelevance ?? 8.0,
         contentCoverage: result.contentCoverage ?? 100.0,
         offTopicRatio: result.offTopicRatio ?? 0.0,
+        accuracy: result.accuracy ?? 9.0,
+        explanationQuality: result.explanationQuality ?? 8.5,
+        confidence: result.confidence ?? 8.5,
+        clarity: result.clarity ?? 9.0,
+        fluency: result.fluency ?? 8.5,
+        professionalism: result.professionalism ?? 9.5,
+        fillerWordCount: result.fillerWordCount ?? 0,
+        fillerRate: result.fillerRate ?? 0.0,
+        repetitionCount: result.repetitionCount ?? 0,
+        longPauseCount: result.longPauseCount ?? 0,
         overallScore: result.overallScore ?? result.overall_score ?? 8.0,
         contentScore: result.content_score || 8.2,
         deliveryScore: result.delivery_score || 8.0,
-        scores: result.scores,
         parameterScores: result.parameter_scores,
         specialScores: result.special_scores,
         strengths: result.strengths || [],
@@ -1094,17 +1111,46 @@ export default function AudioInterviewPage() {
                       </div>
                     </div>
 
-                    {/* Strict Base Scores Breakdown */}
-                    {currentEvaluation.scores && (
-                      <div className="space-y-2 text-xs">
-                        <ScoreBar label="Question Relevance (25%)" score={Math.round((currentEvaluation.answerRelevance ?? 8.0) * 10)} />
-                        <ScoreBar label="Content Coverage (20%)" score={Math.round(currentEvaluation.contentCoverage ?? 100)} />
-                        <ScoreBar label="Technical Accuracy (15%)" score={Math.round(currentEvaluation.scores.accuracy * 10)} />
-                        <ScoreBar label="Explanation Quality (10%)" score={Math.round(currentEvaluation.scores.explanationQuality * 10)} />
-                        <ScoreBar label="Structure & STAR (10%)" score={Math.round(currentEvaluation.scores.structure * 10)} />
-                        <ScoreBar label="Examples & Evidence (5%)" score={Math.round(currentEvaluation.scores.examplesEvidence * 10)} />
+                    {/* 8-Parameter Scoring Breakdown */}
+                    <div className="space-y-2 text-xs">
+                      <ScoreBar label="Question Relevance (25%)" score={Math.round((currentEvaluation.relevance ?? currentEvaluation.answerRelevance ?? 8.0) * 10)} />
+                      <ScoreBar label="Required Content Coverage (20%)" score={Math.round(currentEvaluation.contentCoverage ?? 100)} />
+                      <ScoreBar label="Accuracy (15%)" score={Math.round((currentEvaluation.accuracy ?? 9.0) * 10)} />
+                      <ScoreBar label="Explanation Quality (10%)" score={Math.round((currentEvaluation.explanationQuality ?? 8.5) * 10)} />
+                      <ScoreBar label="Confidence (10%)" score={Math.round((currentEvaluation.confidence ?? 8.5) * 10)} />
+                      <ScoreBar label="Clarity (10%)" score={Math.round((currentEvaluation.clarity ?? 9.0) * 10)} />
+                      <ScoreBar label="Fluency (5%)" score={Math.round((currentEvaluation.fluency ?? 8.5) * 10)} />
+                      <ScoreBar label="Professionalism (5%)" score={Math.round((currentEvaluation.professionalism ?? 9.5) * 10)} />
+                    </div>
+
+                    {/* Speech Analysis Card */}
+                    <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/[0.08] space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <strong className="text-rose-400 font-bold flex items-center gap-1.5">
+                          <Mic className="h-3.5 w-3.5" /> Speech Analysis
+                        </strong>
+                        <span className="text-[10px] text-neutral-400 font-mono">
+                          Filler rate: {currentEvaluation.fillerRate ?? 0}%
+                        </span>
                       </div>
-                    )}
+                      <div className="grid grid-cols-3 gap-2 text-center text-[11px]">
+                        <div className="p-2 rounded-xl bg-black/40 border border-white/5">
+                          <span className="text-[10px] text-neutral-400 block">Filler words</span>
+                          <strong className="text-white text-xs">{currentEvaluation.fillerWordCount ?? 0}</strong>
+                        </div>
+                        <div className="p-2 rounded-xl bg-black/40 border border-white/5">
+                          <span className="text-[10px] text-neutral-400 block">Long pauses</span>
+                          <strong className="text-white text-xs">{currentEvaluation.longPauseCount ?? 0}</strong>
+                        </div>
+                        <div className="p-2 rounded-xl bg-black/40 border border-white/5">
+                          <span className="text-[10px] text-neutral-400 block">Repeated phrases</span>
+                          <strong className="text-white text-xs">{currentEvaluation.repetitionCount ?? 0}</strong>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-neutral-400 leading-normal pt-1">
+                        Try reducing filler words ('um', 'uh') and shortening pauses between ideas for a smoother delivery.
+                      </p>
+                    </div>
                   </>
                 )}
 
