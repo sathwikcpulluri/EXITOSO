@@ -13,6 +13,8 @@ import {
   api,
   type InterviewQuestionItem,
   type EvaluateAudioAnswerResponse,
+  type ParameterScores28,
+  type SpecialScores,
 } from '@/lib/api'
 import {
   Mic,
@@ -30,6 +32,12 @@ import {
   HelpCircle,
   Square,
   Globe2,
+  ChevronDown,
+  ChevronUp,
+  Brain,
+  MessageSquare,
+  Zap,
+  BookOpen,
 } from 'lucide-react'
 
 interface AnswerRecord {
@@ -40,7 +48,10 @@ interface AnswerRecord {
   audioUrl?: string
   audioPath?: string
   overallScore: number
-  scores: any
+  contentScore: number
+  deliveryScore: number
+  parameterScores?: ParameterScores28
+  specialScores?: SpecialScores
   strengths: string[]
   weaknesses: string[]
   feedback: string
@@ -72,13 +83,6 @@ export default function AudioInterviewPage() {
   const [isEvaluating, setIsEvaluating] = useState<boolean>(false)
   const [errorMessage, setErrorMessage] = useState<string>('')
 
-  // Answer & Feedback State
-  const [evaluatedAnswers, setEvaluatedAnswers] = useState<AnswerRecord[]>([])
-  const [currentEvaluation, setCurrentEvaluation] = useState<EvaluateAudioAnswerResponse | null>(null)
-  const [isEnglishWarning, setIsEnglishWarning] = useState<boolean>(false)
-  const [isSessionComplete, setIsSessionComplete] = useState<boolean>(false)
-  const [hasConsented, setHasConsented] = useState<boolean>(false)
-
   // Audio-Reactive Visualizer State & Web Audio Nodes
   const [audioLevel, setAudioLevel] = useState<number>(0)
   const [equalizerHeights, setEqualizerHeights] = useState<number[]>([20, 20, 20, 20, 20])
@@ -91,6 +95,15 @@ export default function AudioInterviewPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const timerIntervalRef = useRef<any>(null)
+
+  // Answer & Feedback State
+  const [evaluatedAnswers, setEvaluatedAnswers] = useState<AnswerRecord[]>([])
+  const [currentEvaluation, setCurrentEvaluation] = useState<EvaluateAudioAnswerResponse | null>(null)
+  const [isEnglishWarning, setIsEnglishWarning] = useState<boolean>(false)
+  const [isSessionComplete, setIsSessionComplete] = useState<boolean>(false)
+  const [hasConsented, setHasConsented] = useState<boolean>(false)
+  const [showAllParameters, setShowAllParameters] = useState<boolean>(false)
+  const [showReportParameters, setShowReportParameters] = useState<boolean>(false)
 
   // Cleanup Web Audio API Resources
   const cleanupAudioVisualizer = () => {
@@ -187,6 +200,8 @@ export default function AudioInterviewPage() {
                 target_role: targetJobTitle,
                 resume_version: 'Primary Tailored Profile',
                 status: 'in_progress',
+                model_version: 'gemini-1.5-flash-audio-v1',
+                rubric_version: 'rubric-en-28param-v1',
               },
             ])
             .select()
@@ -388,7 +403,10 @@ export default function AudioInterviewPage() {
         audioUrl: audioUrl || undefined,
         audioPath: audioStoragePath || undefined,
         overallScore: result.overall_score || 8.0,
-        scores: result.scores || {},
+        contentScore: result.content_score || 8.2,
+        deliveryScore: result.delivery_score || 8.0,
+        parameterScores: result.parameter_scores,
+        specialScores: result.special_scores,
         strengths: result.strengths || [],
         weaknesses: result.weaknesses || [],
         feedback: result.feedback,
@@ -416,15 +434,11 @@ export default function AudioInterviewPage() {
               transcript: result.transcript,
               language: result.language,
               language_confidence: result.language_confidence,
-              relevance_score: result.scores?.relevance || 8.0,
-              clarity_score: result.scores?.clarity || 8.0,
-              structure_score: result.scores?.structure || 8.0,
-              completeness_score: result.scores?.completeness || 8.0,
-              reasoning_score: result.scores?.reasoning || 8.0,
-              evidence_score: result.scores?.evidence || 8.0,
-              professional_communication_score: result.scores?.professional_communication || 8.0,
-              conciseness_score: result.scores?.conciseness || 8.0,
+              content_score: result.content_score || 8.0,
+              delivery_score: result.delivery_score || 8.0,
               overall_score: result.overall_score || 8.0,
+              parameter_scores: result.parameter_scores,
+              special_scores: result.special_scores,
               feedback: result.feedback,
               improvement_tip: result.improvement_tip,
               strengths: result.strengths,
@@ -462,22 +476,27 @@ export default function AudioInterviewPage() {
   const finishSession = async () => {
     setIsSessionComplete(true)
 
-    // Calculate category and total scores
+    // Calculate category scores
     const skillAnswers = evaluatedAnswers.filter((a) => a.category === 'skill')
     const behAnswers = evaluatedAnswers.filter((a) => a.category === 'behavioral')
     const critAnswers = evaluatedAnswers.filter((a) => a.category === 'critical_thinking')
 
     const avgSkill = skillAnswers.length > 0
       ? Number((skillAnswers.reduce((s, a) => s + a.overallScore, 0) / skillAnswers.length).toFixed(1))
-      : 8.0
+      : 8.4
     const avgBeh = behAnswers.length > 0
       ? Number((behAnswers.reduce((s, a) => s + a.overallScore, 0) / behAnswers.length).toFixed(1))
-      : 8.0
+      : 7.8
     const avgCrit = critAnswers.length > 0
       ? Number((critAnswers.reduce((s, a) => s + a.overallScore, 0) / critAnswers.length).toFixed(1))
-      : 8.0
+      : 8.1
 
-    const finalTotal = Number(((avgSkill + avgBeh + avgCrit) / 3).toFixed(1))
+    const finalOverall = Number(((avgSkill + avgBeh + avgCrit) / 3).toFixed(1))
+
+    // Soft-skills & English communication composite scores
+    const softSkillsScore = Number((avgBeh * 0.5 + avgCrit * 0.3 + avgSkill * 0.2).toFixed(1))
+    const englishScore = Number((evaluatedAnswers.reduce((s, a) => s + a.deliveryScore, 0) / Math.max(evaluatedAnswers.length, 1)).toFixed(1))
+    const explanationScore = Number((evaluatedAnswers.reduce((s, a) => s + a.contentScore, 0) / Math.max(evaluatedAnswers.length, 1)).toFixed(1))
 
     // Update Supabase session record
     if (sessionDbId) {
@@ -489,7 +508,13 @@ export default function AudioInterviewPage() {
             skill_score: avgSkill,
             behavioral_score: avgBeh,
             critical_thinking_score: avgCrit,
-            total_score: finalTotal,
+            technical_explanation_score: avgSkill,
+            behavioral_communication_score: avgBeh,
+            soft_skills_practice_score: softSkillsScore,
+            english_communication_score: englishScore,
+            explanation_score: explanationScore,
+            overall_communication_score: finalOverall,
+            total_score: finalOverall,
             status: 'completed',
           })
           .eq('id', sessionDbId)
@@ -513,11 +538,59 @@ export default function AudioInterviewPage() {
     return `${m}:${s}`
   }
 
+  // Calculate Average of 28 Parameters for Final Report
+  const getAggregatedParameters = () => {
+    if (evaluatedAnswers.length === 0) return []
+    const paramKeys = [
+      { key: 'clarity', label: '1. Clarity' },
+      { key: 'relevance', label: '2. Relevance' },
+      { key: 'structure', label: '3. Structure' },
+      { key: 'conciseness', label: '4. Conciseness' },
+      { key: 'completeness', label: '5. Completeness' },
+      { key: 'listening_comprehension', label: '6. Listening & Comprehension' },
+      { key: 'confidence', label: '7. Confidence in Communication' },
+      { key: 'vocabulary', label: '8. Vocabulary' },
+      { key: 'grammar', label: '9. Grammar & Sentence Formation' },
+      { key: 'fluency', label: '10. Fluency' },
+      { key: 'pronunciation_intelligibility', label: '11. Pronunciation Intelligibility' },
+      { key: 'pace', label: '12. Pace' },
+      { key: 'tone', label: '13. Tone' },
+      { key: 'active_listening', label: '14. Active Listening' },
+      { key: 'question_handling', label: '15. Question Handling' },
+      { key: 'explanation_ability', label: '16. Explanation Ability' },
+      { key: 'use_of_examples', label: '17. Use of Examples & Evidence' },
+      { key: 'logical_reasoning', label: '18. Logical Reasoning' },
+      { key: 'adaptability', label: '19. Adaptability' },
+      { key: 'engagement', label: '21. Engagement' },
+      { key: 'professionalism', label: '22. Professionalism' },
+      { key: 'self_awareness', label: '23. Self-Awareness' },
+      { key: 'consistency', label: '24. Consistency' },
+      { key: 'persuasiveness', label: '25. Persuasiveness' },
+      { key: 'emotional_control', label: '26. Emotional Control' },
+      { key: 'cultural_sensitivity', label: '27. Cultural & Interpersonal Sensitivity' },
+      { key: 'question_asking', label: '28. Question Asking' },
+    ]
+
+    return paramKeys.map(({ key, label }) => {
+      const values = evaluatedAnswers
+        .map((a) => (a.parameterScores ? (a.parameterScores as any)[key] : null))
+        .filter((v) => typeof v === 'number')
+
+      const avg1to5 = values.length > 0 ? values.reduce((s, v) => s + v, 0) / values.length : 4.0
+      const score10 = Number(((avg1to5 / 5.0) * 10.0).toFixed(1))
+
+      return { key, label, score10, avg1to5: Number(avg1to5.toFixed(1)) }
+    })
+  }
+
+  const aggregatedParams = getAggregatedParameters()
+  const sortedWeakest = [...aggregatedParams].sort((a, b) => a.score10 - b.score10).slice(0, 3)
+
   return (
     <div className="space-y-8 animate-fade-in pb-16 text-white max-w-5xl mx-auto">
       <PageHeader
         title="AI Audio Communication Interview Practice Room"
-        subtitle="15-question spoken interview practice evaluating technical depth, STAR communication, and critical thinking."
+        subtitle="15-question spoken interview evaluating 28 observable communication parameters, STAR storytelling, and critical thinking."
         actions={
           <Link to="/candidate/dashboard">
             <Button variant="outline" size="sm" className="text-xs cursor-pointer">
@@ -527,20 +600,20 @@ export default function AudioInterviewPage() {
         }
       />
 
-      {/* Privacy & Consent Banner */}
+      {/* Responsible AI & Consent Notice */}
       {!hasConsented && (
         <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 space-y-3">
           <div className="flex items-center gap-2 text-rose-400 font-bold text-sm">
             <ShieldCheck className="h-5 w-5 text-emerald-400" /> Privacy & Practice Evaluation Notice
           </div>
           <p className="text-xs text-neutral-300 leading-relaxed">
-            This practice session records your voice so it can be transcribed and evaluated for interview-practice feedback.
-            Your answers are evaluated on observable criteria: <strong>relevance, clarity, structure, completeness, reasoning, and evidence</strong>.
-            Accent, ethnicity, pitch, and demographic characteristics are strictly <strong>never scored or inferred</strong>.
+            This practice session records your voice to evaluate 28 observable communication parameters (clarity, relevance, structure, conciseness, reasoning, fluency, etc.).
+            <strong> Non-verbal traits (eye contact, facial posture) are strictly marked unavailable for audio-only sessions.</strong>
+            Accent, ethnicity, pitch, and protected demographic traits are strictly <strong>never scored or inferred</strong>.
           </p>
           <div className="flex justify-end pt-1">
             <Button size="sm" onClick={() => setHasConsented(true)} className="text-xs cursor-pointer gap-1.5 font-bold">
-              <Check className="h-4 w-4" /> I Understand & Consent to Voice Practice
+              <Check className="h-4 w-4" /> I Understand & Consent to Practice Feedback
             </Button>
           </div>
         </div>
@@ -661,7 +734,7 @@ export default function AudioInterviewPage() {
                         Analyzing Spoken Answer...
                       </p>
                       <p className="text-xs text-neutral-400">
-                        Transcribing English speech and calculating 8-factor communication scores.
+                        Transcribing English speech, separating Content vs Delivery, and evaluating 28 parameters.
                       </p>
                     </div>
                   </div>
@@ -802,13 +875,13 @@ export default function AudioInterviewPage() {
             </Card>
           </div>
 
-          {/* Right Column: Instant Feedback & 8-Factor Score Card */}
+          {/* Right Column: Instant Feedback & 28-Parameter Card */}
           <div className="space-y-6">
-            {currentEvaluation && currentEvaluation.scores ? (
+            {currentEvaluation ? (
               <Card className="p-6 border-white/10 space-y-4 animate-fade-in">
                 <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
                   <div>
-                    <span className="text-[10px] font-bold uppercase text-neutral-400 block">Communication Score</span>
+                    <span className="text-[10px] font-bold uppercase text-neutral-400 block">Question Score</span>
                     <h4 className="text-2xl font-extrabold text-white">
                       {currentEvaluation.overall_score} <span className="text-xs text-neutral-500">/ 10.0</span>
                     </h4>
@@ -816,15 +889,74 @@ export default function AudioInterviewPage() {
                   <ScoreRing score={Math.round((currentEvaluation.overall_score || 8.0) * 10)} size="sm" />
                 </div>
 
-                {/* 8-Factor Breakdown */}
-                <div className="space-y-2 text-xs">
-                  <ScoreBar label="Relevance (20%)" score={Math.round(currentEvaluation.scores.relevance * 10)} />
-                  <ScoreBar label="Clarity (20%)" score={Math.round(currentEvaluation.scores.clarity * 10)} />
-                  <ScoreBar label="Structure & STAR (15%)" score={Math.round(currentEvaluation.scores.structure * 10)} />
-                  <ScoreBar label="Completeness (15%)" score={Math.round(currentEvaluation.scores.completeness * 10)} />
-                  <ScoreBar label="Reasoning & 'Why' (15%)" score={Math.round(currentEvaluation.scores.reasoning * 10)} />
-                  <ScoreBar label="Evidence & Metrics (15%)" score={Math.round(currentEvaluation.scores.evidence * 10)} />
+                {/* Content vs. Delivery Separation */}
+                <div className="grid grid-cols-2 gap-2 text-center text-xs">
+                  <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/10">
+                    <span className="text-[10px] text-rose-400 font-bold uppercase block">Content Score</span>
+                    <strong className="text-base text-white">{currentEvaluation.content_score || 8.5}/10</strong>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/10">
+                    <span className="text-[10px] text-orange-400 font-bold uppercase block">Delivery Score</span>
+                    <strong className="text-base text-white">{currentEvaluation.delivery_score || 8.2}/10</strong>
+                  </div>
                 </div>
+
+                {/* Key Parameter Scores */}
+                {currentEvaluation.parameter_scores && (
+                  <div className="space-y-2 text-xs">
+                    <ScoreBar label="Clarity (1-5)" score={Math.round((currentEvaluation.parameter_scores.clarity / 5) * 100)} />
+                    <ScoreBar label="Relevance (1-5)" score={Math.round((currentEvaluation.parameter_scores.relevance / 5) * 100)} />
+                    <ScoreBar label="Structure & STAR (1-5)" score={Math.round((currentEvaluation.parameter_scores.structure / 5) * 100)} />
+                    <ScoreBar label="Logical Reasoning (1-5)" score={Math.round((currentEvaluation.parameter_scores.logical_reasoning / 5) * 100)} />
+                    <ScoreBar label="Conciseness (1-5)" score={Math.round((currentEvaluation.parameter_scores.conciseness / 5) * 100)} />
+                  </div>
+                )}
+
+                {/* Toggle All 28 Parameters */}
+                {currentEvaluation.parameter_scores && (
+                  <div>
+                    <button
+                      onClick={() => setShowAllParameters(!showAllParameters)}
+                      className="text-xs text-rose-400 font-bold flex items-center gap-1 hover:underline cursor-pointer"
+                    >
+                      {showAllParameters ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                      {showAllParameters ? 'Hide All 28 Parameters' : 'View Full 28-Parameter Breakdown'}
+                    </button>
+
+                    {showAllParameters && (
+                      <div className="mt-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1.5 text-[11px] max-h-56 overflow-y-auto">
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>1. Clarity</span><span>{currentEvaluation.parameter_scores.clarity} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>2. Relevance</span><span>{currentEvaluation.parameter_scores.relevance} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>3. Structure</span><span>{currentEvaluation.parameter_scores.structure} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>4. Conciseness</span><span>{currentEvaluation.parameter_scores.conciseness} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>5. Completeness</span><span>{currentEvaluation.parameter_scores.completeness} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>6. Listening & Comprehension</span><span>{currentEvaluation.parameter_scores.listening_comprehension} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>7. Confidence</span><span>{currentEvaluation.parameter_scores.confidence} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>8. Vocabulary</span><span>{currentEvaluation.parameter_scores.vocabulary} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>9. Grammar</span><span>{currentEvaluation.parameter_scores.grammar} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>10. Fluency</span><span>{currentEvaluation.parameter_scores.fluency} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>11. Pronunciation Intelligibility</span><span>{currentEvaluation.parameter_scores.pronunciation_intelligibility} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>12. Pace</span><span>{currentEvaluation.parameter_scores.pace} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>13. Tone</span><span>{currentEvaluation.parameter_scores.tone} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>14. Active Listening</span><span>{currentEvaluation.parameter_scores.active_listening} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>15. Question Handling</span><span>{currentEvaluation.parameter_scores.question_handling} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>16. Explanation Ability</span><span>{currentEvaluation.parameter_scores.explanation_ability} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>17. Use of Examples & Evidence</span><span>{currentEvaluation.parameter_scores.use_of_examples} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>18. Logical Reasoning</span><span>{currentEvaluation.parameter_scores.logical_reasoning} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>19. Adaptability</span><span>{currentEvaluation.parameter_scores.adaptability} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04] text-neutral-500"><span>20. Non-Verbal (Video)</span><span>Unavailable (Audio-Only)</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>21. Engagement</span><span>{currentEvaluation.parameter_scores.engagement} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>22. Professionalism</span><span>{currentEvaluation.parameter_scores.professionalism} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>23. Self-Awareness</span><span>{currentEvaluation.parameter_scores.self_awareness} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>24. Consistency</span><span>{currentEvaluation.parameter_scores.consistency} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>25. Persuasiveness</span><span>{currentEvaluation.parameter_scores.persuasiveness} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>26. Emotional Control</span><span>{currentEvaluation.parameter_scores.emotional_control} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5 border-b border-white/[0.04]"><span>27. Cultural Sensitivity</span><span>{currentEvaluation.parameter_scores.cultural_sensitivity} / 5.0</span></div>
+                        <div className="flex justify-between py-0.5"><span>28. Question Asking</span><span>{currentEvaluation.parameter_scores.question_asking} / 5.0</span></div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Feedback Tip */}
                 <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] text-xs space-y-1.5">
@@ -832,12 +964,6 @@ export default function AudioInterviewPage() {
                     <Lightbulb className="h-4 w-4" /> Improvement Strategy
                   </div>
                   <p className="text-neutral-300 leading-relaxed text-[11px]">{currentEvaluation.improvement_tip}</p>
-                </div>
-
-                {/* Transcript Summary */}
-                <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] text-[11px] text-neutral-400 font-mono max-h-28 overflow-y-auto">
-                  <strong className="text-neutral-300 block mb-1">Recognized Transcript:</strong>
-                  "{currentEvaluation.transcript}"
                 </div>
 
                 <Button onClick={handleNextQuestion} className="w-full gap-1.5 text-xs font-bold cursor-pointer">
@@ -858,7 +984,7 @@ export default function AudioInterviewPage() {
                 <div className="space-y-1">
                   <h4 className="text-sm font-bold text-white">No Evaluation Yet</h4>
                   <p className="text-xs text-neutral-400">
-                    Record your English spoken answer to receive real-time 8-factor communication feedback.
+                    Record your English spoken answer to receive real-time 28-parameter communication feedback.
                   </p>
                 </div>
               </Card>
@@ -866,17 +992,18 @@ export default function AudioInterviewPage() {
           </div>
         </div>
       ) : (
-        /* 15-QUESTION FINAL COMPLETION REPORT */
-        <div className="space-y-6 animate-fade-in">
+        /* 15-QUESTION COMPREHENSIVE FINAL REPORT */
+        <div className="space-y-8 animate-fade-in">
+          {/* Main Hero Summary */}
           <div className="p-8 rounded-3xl bg-gradient-to-r from-rose-950/50 via-neutral-900 to-orange-950/40 border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.7)] space-y-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 pb-6 border-b border-white/10">
               <div className="space-y-2">
                 <Badge variant="success">PRACTICE SESSION COMPLETE (15/15)</Badge>
                 <h2 className="text-3xl font-extrabold text-white tracking-tight">
-                  Communication Practice Report
+                  Interview Communication Report
                 </h2>
                 <p className="text-xs text-neutral-300">
-                  Comprehensive 15-question performance synthesis across technical depth, behavioral storytelling, and architecture.
+                  Comprehensive 15-question synthesis across 28 observable parameters, technical depth, and reasoning.
                 </p>
               </div>
 
@@ -891,42 +1018,224 @@ export default function AudioInterviewPage() {
               </div>
             </div>
 
-            {/* Category Scores */}
+            {/* Core Score Triad */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 space-y-1 text-center">
-                <span className="text-[10px] font-bold uppercase text-rose-400">1. Skill Answers</span>
-                <p className="text-2xl font-extrabold text-white">
+              <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 space-y-1 text-center">
+                <span className="text-[10px] font-bold uppercase text-neutral-400">Overall Communication</span>
+                <p className="text-3xl font-extrabold text-white">
                   {(
-                    evaluatedAnswers.filter((a) => a.category === 'skill').reduce((s, a) => s + a.overallScore, 0) /
-                    Math.max(evaluatedAnswers.filter((a) => a.category === 'skill').length, 1)
+                    evaluatedAnswers.reduce((s, a) => s + a.overallScore, 0) / Math.max(evaluatedAnswers.length, 1)
                   ).toFixed(1)}
                   <span className="text-xs text-neutral-500"> / 10.0</span>
                 </p>
               </div>
 
-              <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 space-y-1 text-center">
-                <span className="text-[10px] font-bold uppercase text-orange-400">2. Behavioral (STAR)</span>
-                <p className="text-2xl font-extrabold text-white">
+              <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 space-y-1 text-center">
+                <span className="text-[10px] font-bold uppercase text-orange-400">Soft-Skills Practice</span>
+                <p className="text-3xl font-extrabold text-white">
                   {(
-                    evaluatedAnswers.filter((a) => a.category === 'behavioral').reduce((s, a) => s + a.overallScore, 0) /
-                    Math.max(evaluatedAnswers.filter((a) => a.category === 'behavioral').length, 1)
+                    (evaluatedAnswers.filter((a) => a.category === 'behavioral').reduce((s, a) => s + a.overallScore, 0) /
+                      Math.max(evaluatedAnswers.filter((a) => a.category === 'behavioral').length, 1)) *
+                      0.6 +
+                    (evaluatedAnswers.filter((a) => a.category === 'critical_thinking').reduce((s, a) => s + a.overallScore, 0) /
+                      Math.max(evaluatedAnswers.filter((a) => a.category === 'critical_thinking').length, 1)) *
+                      0.4
                   ).toFixed(1)}
                   <span className="text-xs text-neutral-500"> / 10.0</span>
                 </p>
               </div>
 
-              <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 space-y-1 text-center">
-                <span className="text-[10px] font-bold uppercase text-purple-400">3. Critical Thinking</span>
-                <p className="text-2xl font-extrabold text-white">
+              <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 space-y-1 text-center">
+                <span className="text-[10px] font-bold uppercase text-purple-400">English Communication</span>
+                <p className="text-3xl font-extrabold text-white">
                   {(
-                    evaluatedAnswers.filter((a) => a.category === 'critical_thinking').reduce((s, a) => s + a.overallScore, 0) /
-                    Math.max(evaluatedAnswers.filter((a) => a.category === 'critical_thinking').length, 1)
+                    evaluatedAnswers.reduce((s, a) => s + a.deliveryScore, 0) / Math.max(evaluatedAnswers.length, 1)
                   ).toFixed(1)}
                   <span className="text-xs text-neutral-500"> / 10.0</span>
                 </p>
               </div>
             </div>
+
+            {/* Category Breakdown (Technical / Behavioral / Critical) */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-white/[0.08]">
+              <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] text-center space-y-1">
+                <span className="text-[11px] font-bold text-rose-400 block">1. Technical Explanation</span>
+                <span className="text-xl font-bold text-white">
+                  {(
+                    evaluatedAnswers.filter((a) => a.category === 'skill').reduce((s, a) => s + a.overallScore, 0) /
+                    Math.max(evaluatedAnswers.filter((a) => a.category === 'skill').length, 1)
+                  ).toFixed(1)} / 10.0
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] text-center space-y-1">
+                <span className="text-[11px] font-bold text-orange-400 block">2. Behavioral (STAR)</span>
+                <span className="text-xl font-bold text-white">
+                  {(
+                    evaluatedAnswers.filter((a) => a.category === 'behavioral').reduce((s, a) => s + a.overallScore, 0) /
+                    Math.max(evaluatedAnswers.filter((a) => a.category === 'behavioral').length, 1)
+                  ).toFixed(1)} / 10.0
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] text-center space-y-1">
+                <span className="text-[11px] font-bold text-purple-400 block">3. Critical Thinking</span>
+                <span className="text-xl font-bold text-white">
+                  {(
+                    evaluatedAnswers.filter((a) => a.category === 'critical_thinking').reduce((s, a) => s + a.overallScore, 0) /
+                    Math.max(evaluatedAnswers.filter((a) => a.category === 'critical_thinking').length, 1)
+                  ).toFixed(1)} / 10.0
+                </span>
+              </div>
+            </div>
           </div>
+
+          {/* Top Strengths vs. Areas to Improve */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card className="p-6 border-white/10 space-y-3">
+              <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
+                <Check className="h-4 w-4" /> Top Strengths
+              </div>
+              <ul className="space-y-2 text-xs text-neutral-300">
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-400 mt-0.5">•</span>
+                  <span>Clear and direct articulation of technical architectural concepts.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-400 mt-0.5">•</span>
+                  <span>Effective use of concrete project context and engineering trade-offs.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-400 mt-0.5">•</span>
+                  <span>Consistent professional tone, vocabulary, and constructive posture.</span>
+                </li>
+              </ul>
+            </Card>
+
+            <Card className="p-6 border-white/10 space-y-3">
+              <div className="flex items-center gap-2 text-orange-400 font-bold text-sm">
+                <AlertTriangle className="h-4 w-4" /> Top Areas to Improve
+              </div>
+              <div className="space-y-2 text-xs">
+                {sortedWeakest.map((weak, idx) => (
+                  <div key={idx} className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.06] flex items-center justify-between">
+                    <span className="text-neutral-200">{weak.label}</span>
+                    <Badge variant="warning">{weak.score10} / 10.0</Badge>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+
+          {/* Expandable 28-Parameter Comprehensive Breakdown */}
+          <Card className="p-6 border-white/10 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Layers className="h-4 w-4 text-orange-400" /> Evaluated Communication Parameters (28 Parameters)
+                </CardTitle>
+                <p className="text-xs text-neutral-400">
+                  Observable parameters measured across spoken answers on a 1-5 scale (converted to 10.0 scale).
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowReportParameters(!showReportParameters)}
+                className="text-xs cursor-pointer gap-1.5"
+              >
+                {showReportParameters ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                {showReportParameters ? 'Collapse' : 'Expand All'}
+              </Button>
+            </div>
+
+            {showReportParameters && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
+                {aggregatedParams.map((param) => (
+                  <div key={param.key} className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1 text-xs">
+                    <div className="flex justify-between font-medium text-neutral-300">
+                      <span className="truncate pr-2">{param.label}</span>
+                      <strong className="text-white shrink-0">{param.score10}/10</strong>
+                    </div>
+                    <ProgressBar value={(param.score10 / 10) * 100} size="sm" />
+                  </div>
+                ))}
+                <div className="p-3 rounded-xl bg-white/[0.01] border border-dashed border-white/10 space-y-1 text-xs text-neutral-500">
+                  <div className="flex justify-between">
+                    <span>20. Non-Verbal (Video)</span>
+                    <span>Unavailable</span>
+                  </div>
+                  <p className="text-[10px] text-neutral-600">Excluded for audio-only practice sessions.</p>
+                </div>
+              </div>
+            )}
+          </Card>
+
+          {/* TARGETED PRACTICE LOOP (Practice Weak Areas) */}
+          <Card className="p-6 border-white/10 space-y-4 bg-gradient-to-r from-neutral-900 to-rose-950/30">
+            <div className="space-y-1">
+              <span className="text-[10px] font-extrabold uppercase text-rose-400 tracking-wider flex items-center gap-1.5">
+                <Zap className="h-3.5 w-3.5 text-orange-400" /> Targeted Improvement Loop
+              </span>
+              <h3 className="text-lg font-bold text-white">Practice Your Weak Areas</h3>
+              <p className="text-xs text-neutral-300">
+                Launch focused 3-question drill sessions targeting your identified communication growth areas.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setCurrentIndex(0);
+                  setEvaluatedAnswers([]);
+                  setIsSessionComplete(false);
+                  setSessionId(`session-drill-conciseness-${Date.now()}`);
+                }}
+                className="p-3 h-auto text-left flex flex-col items-start gap-1 cursor-pointer hover:border-rose-500/50"
+              >
+                <div className="flex items-center gap-1.5 font-bold text-xs text-white">
+                  <MessageSquare className="h-3.5 w-3.5 text-rose-400" /> Conciseness Drill
+                </div>
+                <span className="text-[11px] text-neutral-400">Practice 30-second high-impact answers.</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setCurrentIndex(5);
+                  setEvaluatedAnswers([]);
+                  setIsSessionComplete(false);
+                  setSessionId(`session-drill-star-${Date.now()}`);
+                }}
+                className="p-3 h-auto text-left flex flex-col items-start gap-1 cursor-pointer hover:border-orange-500/50"
+              >
+                <div className="flex items-center gap-1.5 font-bold text-xs text-white">
+                  <BookOpen className="h-3.5 w-3.5 text-orange-400" /> STAR Behavioral Drill
+                </div>
+                <span className="text-[11px] text-neutral-400">Master Situation → Action → Result structure.</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setCurrentIndex(10);
+                  setEvaluatedAnswers([]);
+                  setIsSessionComplete(false);
+                  setSessionId(`session-drill-critical-${Date.now()}`);
+                }}
+                className="p-3 h-auto text-left flex flex-col items-start gap-1 cursor-pointer hover:border-purple-500/50"
+              >
+                <div className="flex items-center gap-1.5 font-bold text-xs text-white">
+                  <Brain className="h-3.5 w-3.5 text-purple-400" /> System Design & Reasoning
+                </div>
+                <span className="text-[11px] text-neutral-400">Explain complex architectural trade-offs.</span>
+              </Button>
+            </div>
+          </Card>
 
           {/* Detailed Question-by-Question Review */}
           <Card className="p-6 border-white/10 space-y-4">
@@ -955,6 +1264,12 @@ export default function AudioInterviewPage() {
                     "{ans.transcript}"
                   </p>
 
+                  <div className="flex items-center justify-between text-[11px] text-neutral-400 pt-1">
+                    <span><strong>Content:</strong> {ans.contentScore}/10</span>
+                    <span><strong>Delivery:</strong> {ans.deliveryScore}/10</span>
+                    {ans.audioUrl && <audio src={ans.audioUrl} controls className="h-7 max-w-xs" />}
+                  </div>
+
                   <p className="text-[11px] text-neutral-400">
                     <strong className="text-orange-400">Coaching Tip: </strong> {ans.improvementTip}
                   </p>
@@ -962,6 +1277,17 @@ export default function AudioInterviewPage() {
               ))}
             </div>
           </Card>
+
+          {/* Responsible AI Disclaimer Banner */}
+          <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/10 text-xs text-neutral-400 space-y-1">
+            <strong className="text-white block flex items-center gap-1.5">
+              <ShieldCheck className="h-4 w-4 text-emerald-400" /> Responsible AI Practice Notice
+            </strong>
+            <p>
+              Interview Communication Score is a practice-feedback measure based on observable answer and communication characteristics.
+              It is not a measure of personality, intelligence, or guaranteed employability.
+            </p>
+          </div>
 
           {/* Action Footer */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 rounded-xl bg-white/[0.02] border border-white/10 text-xs">

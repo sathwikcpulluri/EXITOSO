@@ -279,15 +279,43 @@ export interface InterviewQuestionItem {
   expected_topics: string[]
 }
 
-export interface InterviewScoreBreakdown {
-  relevance: number
+export interface ParameterScores28 {
   clarity: number
+  relevance: number
   structure: number
-  completeness: number
-  reasoning: number
-  evidence: number
-  professional_communication: number
   conciseness: number
+  completeness: number
+  listening_comprehension: number
+  confidence: number
+  vocabulary: number
+  grammar: number
+  fluency: number
+  pronunciation_intelligibility: number
+  pace: number
+  tone: number
+  active_listening: number
+  question_handling: number
+  explanation_ability: number
+  use_of_examples: number
+  logical_reasoning: number
+  adaptability: number
+  non_verbal_communication: number | null // null for audio-only
+  engagement: number
+  professionalism: number
+  self_awareness: number
+  consistency: number
+  persuasiveness: number
+  emotional_control: number
+  cultural_sensitivity: number
+  question_asking: number
+}
+
+export interface SpecialScores {
+  understanding: number
+  technical_accuracy: number
+  simplicity: number
+  behavioral_structure: number
+  critical_thinking: number
 }
 
 export interface EvaluateAudioAnswerResponse {
@@ -295,8 +323,12 @@ export interface EvaluateAudioAnswerResponse {
   language: string
   language_confidence: number
   transcript: string
-  scores?: InterviewScoreBreakdown
+  parameter_scores?: ParameterScores28
+  special_scores?: SpecialScores
+  content_score?: number
+  delivery_score?: number
   overall_score?: number
+  question_understanding?: number
   strengths: string[]
   weaknesses: string[]
   feedback: string
@@ -1506,17 +1538,47 @@ export const api = {
         language: 'English',
         language_confidence: 0.98,
         transcript,
-        scores: {
-          relevance: 8.5,
-          clarity: 8.2,
-          structure: 8.0,
-          completeness: 8.4,
-          reasoning: 8.1,
-          evidence: 8.3,
-          professional_communication: 8.8,
-          conciseness: 8.0,
+        parameter_scores: {
+          clarity: 4.3,
+          relevance: 4.5,
+          structure: 4.2,
+          conciseness: 4.1,
+          completeness: 4.4,
+          listening_comprehension: 4.3,
+          confidence: 4.2,
+          vocabulary: 4.4,
+          grammar: 4.5,
+          fluency: 4.3,
+          pronunciation_intelligibility: 4.5,
+          pace: 4.2,
+          tone: 4.4,
+          active_listening: 4.2,
+          question_handling: 4.3,
+          explanation_ability: 4.4,
+          use_of_examples: 4.2,
+          logical_reasoning: 4.4,
+          adaptability: 4.1,
+          non_verbal_communication: null,
+          engagement: 4.3,
+          professionalism: 4.6,
+          self_awareness: 4.2,
+          consistency: 4.4,
+          persuasiveness: 4.1,
+          emotional_control: 4.6,
+          cultural_sensitivity: 4.5,
+          question_asking: 4.0,
         },
-        overall_score: 8.3,
+        special_scores: {
+          understanding: 8.8,
+          technical_accuracy: 8.6,
+          simplicity: 8.4,
+          behavioral_structure: 8.5,
+          critical_thinking: 8.6,
+        },
+        content_score: 8.6,
+        delivery_score: 8.4,
+        overall_score: 8.5,
+        question_understanding: 8.8,
         strengths: [
           'Clear articulation of key technical decisions and architectural rationale.',
           'Solid inclusion of production engineering context and reliability requirements.',
@@ -1524,10 +1586,10 @@ export const api = {
         weaknesses: [
           'Consider concluding with quantifiable metrics (e.g. latency reduction percentages, SLA uptime).',
         ],
-        feedback: `Your response demonstrated good ${category.replace('_', ' ')} communication with an overall score of 8.3/10.0.`,
+        feedback: `Your response demonstrated good ${category.replace('_', ' ')} communication with an overall score of 8.5/10.0.`,
         improvement_tip: 'Structure your response using Situation → Action → Result (STAR) to clearly highlight the business and technical impact.',
         model_version: 'gemini-1.5-flash-audio-v1',
-        rubric_version: 'rubric-en-8factor-v1',
+        rubric_version: 'rubric-en-28param-v1',
       }
     }
   },

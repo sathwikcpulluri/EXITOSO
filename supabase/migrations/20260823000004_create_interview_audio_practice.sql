@@ -1,5 +1,5 @@
 -- Migration: 20260823000004_create_interview_audio_practice.sql
--- Description: Create interview practice sessions and answers tables with RLS and private audio storage
+-- Description: Create 28-parameter interview practice sessions and answers tables with RLS and private audio storage
 
 CREATE TABLE IF NOT EXISTS public.interview_practice_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -12,10 +12,19 @@ CREATE TABLE IF NOT EXISTS public.interview_practice_sessions (
     skill_score NUMERIC(3,1) DEFAULT 0.0,
     behavioral_score NUMERIC(3,1) DEFAULT 0.0,
     critical_thinking_score NUMERIC(3,1) DEFAULT 0.0,
+    technical_explanation_score NUMERIC(3,1) DEFAULT 0.0,
+    behavioral_communication_score NUMERIC(3,1) DEFAULT 0.0,
+    soft_skills_practice_score NUMERIC(3,1) DEFAULT 0.0,
+    english_communication_score NUMERIC(3,1) DEFAULT 0.0,
+    explanation_score NUMERIC(3,1) DEFAULT 0.0,
+    overall_communication_score NUMERIC(3,1) DEFAULT 0.0,
     total_score NUMERIC(3,1) DEFAULT 0.0,
+    top_strengths JSONB DEFAULT '[]'::jsonb,
+    top_weaknesses JSONB DEFAULT '[]'::jsonb,
+    targeted_practice_recommendations JSONB DEFAULT '[]'::jsonb,
     status TEXT DEFAULT 'in_progress', -- 'in_progress' | 'completed' | 'cancelled'
     model_version TEXT DEFAULT 'gemini-1.5-flash-audio-v1',
-    rubric_version TEXT DEFAULT 'rubric-en-8factor-v1',
+    rubric_version TEXT DEFAULT 'rubric-en-28param-v1',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -32,15 +41,11 @@ CREATE TABLE IF NOT EXISTS public.interview_practice_answers (
     transcript TEXT,
     language TEXT DEFAULT 'English',
     language_confidence NUMERIC(3,2) DEFAULT 1.0,
-    relevance_score NUMERIC(3,1) DEFAULT 0.0,
-    clarity_score NUMERIC(3,1) DEFAULT 0.0,
-    structure_score NUMERIC(3,1) DEFAULT 0.0,
-    completeness_score NUMERIC(3,1) DEFAULT 0.0,
-    reasoning_score NUMERIC(3,1) DEFAULT 0.0,
-    evidence_score NUMERIC(3,1) DEFAULT 0.0,
-    professional_communication_score NUMERIC(3,1) DEFAULT 0.0,
-    conciseness_score NUMERIC(3,1) DEFAULT 0.0,
+    content_score NUMERIC(3,1) DEFAULT 0.0,
+    delivery_score NUMERIC(3,1) DEFAULT 0.0,
     overall_score NUMERIC(3,1) DEFAULT 0.0,
+    parameter_scores JSONB DEFAULT '{}'::jsonb, -- 28 parameters on 1-5 scale
+    special_scores JSONB DEFAULT '{}'::jsonb, -- explanation, STAR, critical thinking
     feedback TEXT,
     improvement_tip TEXT,
     strengths JSONB DEFAULT '[]'::jsonb,
