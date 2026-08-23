@@ -39,6 +39,7 @@ import {
   Zap,
   BookOpen,
   Target,
+  FileCheck,
 } from 'lucide-react'
 
 interface AnswerRecord {
@@ -86,6 +87,8 @@ export default function AudioInterviewPage() {
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [textAnswer, setTextAnswer] = useState<string>('')
+  const [liveTranscript, setLiveTranscript] = useState<string>('')
+  const speechRecognitionRef = useRef<any>(null)
   const [isEvaluating, setIsEvaluating] = useState<boolean>(false)
   const [errorMessage, setErrorMessage] = useState<string>('')
 
@@ -323,6 +326,37 @@ export default function AudioInterviewPage() {
 
       mediaRecorder.start(250)
       setIsRecording(true)
+      setLiveTranscript('')
+
+      // Initialize Web Speech API for Real-Time Subtitles
+      try {
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+        if (SpeechRecognition) {
+          const recognition = new SpeechRecognition()
+          recognition.continuous = true
+          recognition.interimResults = true
+          recognition.lang = 'en-US'
+
+          recognition.onresult = (event: any) => {
+            let fullText = ''
+            for (let i = 0; i < event.results.length; i++) {
+              fullText += event.results[i][0].transcript + ' '
+            }
+            const clean = fullText.trim()
+            setLiveTranscript(clean)
+            setTextAnswer(clean)
+          }
+
+          recognition.onerror = (err: any) => {
+            console.warn('[Web Speech Recognition Notice]', err)
+          }
+
+          recognition.start()
+          speechRecognitionRef.current = recognition
+        }
+      } catch (speechErr) {
+        console.warn('[Speech Recognition Init Warning]', speechErr)
+      }
     } catch (err) {
       console.error('[Microphone Permission Error]', err)
       cleanupAudioVisualizer()
@@ -336,6 +370,13 @@ export default function AudioInterviewPage() {
       mediaRecorderRef.current.stop()
       setIsRecording(false)
       cleanupAudioVisualizer()
+
+      if (speechRecognitionRef.current) {
+        try {
+          speechRecognitionRef.current.stop()
+        } catch {}
+        speechRecognitionRef.current = null
+      }
     }
   }
 
@@ -391,6 +432,7 @@ export default function AudioInterviewPage() {
       formData.append('expected_topics', JSON.stringify(currentQ.expected_topics))
 
       const result = await api.evaluateAudioAnswer(formData)
+      setCurrentEvaluation(result)
 
       // Handle Non-English Detection
       if (!result.is_english) {
@@ -398,8 +440,6 @@ export default function AudioInterviewPage() {
         setIsEvaluating(false)
         return
       }
-
-      setCurrentEvaluation(result)
 
       const answerRecord: AnswerRecord = {
         questionNumber: currentQ.question_number,
@@ -862,29 +902,77 @@ export default function AudioInterviewPage() {
                 )}
               </div>
 
-              {/* Text Alternative */}
-              <div className="space-y-1.5 text-xs">
-                <label className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">
-                  Or Type Your Spoken Transcript / Key Notes
-                </label>
-                <textarea
-                  rows={3}
-                  value={textAnswer}
-                  onChange={(e) => setTextAnswer(e.target.value)}
-                  placeholder="Optional: Type or paste your spoken answer for direct text analysis..."
-                  className="w-full p-3 rounded-xl bg-white/[0.03] border border-white/10 text-white text-xs outline-none focus:border-rose-500 resize-none font-mono"
-                />
-              </div>
+              {/* LIVE SUBTITLES (During Recording) */}
+              {isRecording && (
+                <div className="p-4 rounded-2xl bg-neutral-900/90 border border-rose-500/30 space-y-2 animate-fade-in">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-rose-400 font-bold text-xs">
+                      <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                      <span>You said:</span>
+                    </div>
+                    <span className="text-[10px] text-neutral-400 font-mono">Live streaming...</span>
+                  </div>
+                  <p className="text-xs text-white font-mono leading-relaxed min-h-[38px] p-2.5 rounded-xl bg-black/40 border border-white/5">
+                    {liveTranscript || <span className="text-neutral-500 italic">Listening... speak your answer now</span>}
+                  </p>
+                </div>
+              )}
+
+              {/* POST-RECORDING SPOKEN TRANSCRIPT BOX */}
+              {(audioBlob || textAnswer) && !isRecording && (
+                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 space-y-2.5 animate-fade-in">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-orange-400 font-bold text-xs">
+                      <FileCheck className="h-4 w-4 text-orange-400" />
+                      <span>Spoken Transcript:</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {textAnswer.trim() && (
+                        <span className="text-[10px] text-neutral-400 font-mono">
+                          {textAnswer.trim().split(/\s+/).length} Words
+                        </span>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => { setAudioBlob(null); setAudioUrl(null); setTextAnswer(''); setLiveTranscript(''); setCurrentEvaluation(null); }}
+                        className="text-[11px] h-6 px-2 text-neutral-400 hover:text-rose-400 cursor-pointer"
+                      >
+                        <RotateCcw className="h-3 w-3 mr-1" /> Re-record
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-xl bg-black/40 border border-white/[0.08] text-xs text-neutral-200 font-mono leading-relaxed max-h-36 overflow-y-auto">
+                    {textAnswer || liveTranscript || <span className="text-neutral-500 italic">Audio recorded. Ready for AI evaluation.</span>}
+                  </div>
+                </div>
+              )}
+
+              {/* Optional Text Input / Correction */}
+              {!audioBlob && !isRecording && (
+                <div className="space-y-1.5 text-xs">
+                  <label className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">
+                    Or Type / Paste Spoken Transcript
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={textAnswer}
+                    onChange={(e) => setTextAnswer(e.target.value)}
+                    placeholder="Type or paste your spoken answer for direct evaluation..."
+                    className="w-full p-3 rounded-xl bg-white/[0.03] border border-white/10 text-white text-xs outline-none focus:border-rose-500 resize-none font-mono"
+                  />
+                </div>
+              )}
 
               {/* Action Buttons */}
               <div className="flex items-center justify-between pt-2 border-t border-white/[0.08]">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => { setAudioBlob(null); setAudioUrl(null); setTextAnswer(''); }}
+                  onClick={() => { setAudioBlob(null); setAudioUrl(null); setTextAnswer(''); setLiveTranscript(''); setCurrentEvaluation(null); }}
                   className="text-xs cursor-pointer gap-1.5"
                 >
-                  <RotateCcw className="h-3.5 w-3.5" /> Clear Audio
+                  <RotateCcw className="h-3.5 w-3.5" /> Clear / Reset
                 </Button>
 
                 <Button

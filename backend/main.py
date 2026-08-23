@@ -1843,8 +1843,10 @@ class EvaluateAudioAnswerResponse(BaseModel):
 
 def detect_spoken_language(raw_transcript: str) -> tuple[str, float, bool, str, float]:
     """
-    Strict Language Detection:
-    Analyzes actual audio/transcript script, vocabulary, and code-switching.
+    Robust Transcript-Based Language Detection:
+    1. Native non-Latin scripts (Devanagari, Telugu, Tamil, Bengali, etc.) -> non-English.
+    2. Latin script: Analyzes English vocabulary, technical keywords, and distinct code-switching markers.
+    3. Prevents false rejections for Indian English, regional accents, and technical vocabulary.
     Returns: (detected_language, language_confidence, is_english, language_status, english_percentage)
     """
     text = raw_transcript.strip()
@@ -1854,7 +1856,7 @@ def detect_spoken_language(raw_transcript: str) -> tuple[str, float, bool, str, 
     words = text.split()
     total_words = len(words)
 
-    # 1. Script checks for native non-Latin scripts
+    # 1. Native non-Latin scripts check (100% reliable)
     has_devanagari = bool(re.search(r'[\u0900-\u097F]', text))
     has_telugu = bool(re.search(r'[\u0C00-\u0C7F]', text))
     has_tamil = bool(re.search(r'[\u0B80-\u0BFF]', text))
@@ -1881,60 +1883,87 @@ def detect_spoken_language(raw_transcript: str) -> tuple[str, float, bool, str, 
     if has_cyrillic:
         return ("Russian", 0.99, False, "non_english", 0.0)
 
-    # 2. Check for Romanized non-English words / code-switching
+    # 2. Tokenize Latin words
     text_lower = text.lower()
     clean_words = [re.sub(r'[^a-zA-Z]', '', w) for w in text_lower.split() if len(w) > 0]
 
-    hindi_romanized = {
-        "phir", "maine", "aur", "mein", "hum", "yeh", "karna", "kiya", "tha", "hai", "nahi", "nahin",
-        "karenge", "kuch", "bahut", "achha", "accha", "hoga", "raha", "rahe", "chahiye", "bol", "samajh",
-        "cheez", "cheezein", "bhi", "toh", "kaise", "karte", "sakte", "mera", "meri", "humne", "unhone",
-        "unka", "inhe", "aaj", "kal", "kar", "liya", "diya", "dena", "le", "lo", "sab", "log", "baat"
-    }
-    telugu_romanized = {
-        "chesanu", "chesamu", "nenu", "memu", "kani", "mariyu", "undi", "ledu", "undhi", "kuda",
-        "ala", "ila", "ela", "chesam", "cheyali", "cheyandi", "chestaru", "untundi", "gurinchi",
-        "ippudu", "appudu", "chala", "bagundi", "enti", "ante", "cheppanu", "pani", "cheyyadam"
-    }
-    tamil_romanized = {
-        "panninen", "pannitom", "naan", "nanga", "aana", "matrum", "irukku", "illa", "pannunga",
-        "seyya", "solren", "seyrom", "epdi", "apdi", "romba", "nalla", "velai", "panrom"
-    }
-    spanish_words = {
-        "hola", "gracias", "por", "favor", "trabajo", "equipo", "tambien", "pero", "como", "para", "este", "esta"
+    # Standard English and Technical Vocabulary (must never be flagged as non-English)
+    english_core_vocab = {
+        "the", "and", "to", "of", "a", "in", "is", "it", "you", "that", "he", "was", "for", "on", "are", "as",
+        "with", "his", "they", "i", "at", "be", "this", "have", "from", "or", "one", "had", "by", "word", "but",
+        "not", "what", "all", "were", "we", "when", "your", "can", "said", "there", "use", "an", "each", "which",
+        "she", "do", "how", "their", "if", "will", "up", "other", "about", "out", "many", "then", "them", "these",
+        "so", "some", "her", "would", "make", "like", "him", "into", "time", "has", "look", "two", "more", "write",
+        "go", "see", "number", "no", "way", "could", "people", "my", "than", "first", "water", "been", "call",
+        "who", "oil", "its", "now", "find", "long", "down", "day", "did", "get", "come", "made", "may", "part",
+        "react", "node", "javascript", "typescript", "python", "sql", "postgresql", "api", "database", "query",
+        "queries", "caching", "cache", "index", "indexes", "indexing", "redis", "docker", "aws", "endpoint",
+        "pipeline", "service", "services", "server", "code", "latency", "project", "problem", "solution", "fast",
+        "slow", "page", "app", "application", "component", "components", "render", "renders", "rendering",
+        "state", "user", "users", "system", "performance", "table", "tables", "data", "team", "worked", "created",
+        "built", "implemented", "optimized", "solved", "fixed", "scaled", "added", "handled", "identified",
+        "because", "therefore", "initially", "finally", "helped", "achieved", "results", "responsible", "tested"
     }
 
-    hindi_matches = sum(1 for w in clean_words if w in hindi_romanized)
-    telugu_matches = sum(1 for w in clean_words if w in telugu_romanized)
-    tamil_matches = sum(1 for w in clean_words if w in tamil_romanized)
-    spanish_matches = sum(1 for w in clean_words if w in spanish_words)
+    # Distinct, unambiguous Romanized non-English words (no overlap with English words like "log", "in", "para")
+    hindi_distinct = {
+        "phir", "maine", "humne", "karna", "karenge", "achha", "accha", "chahiye", "cheezein", "samajh",
+        "kaise", "karte", "sakte", "unhone", "kuch", "bahut", "liya", "diya", "hoga", "rahe", "raha",
+        "nahin", "mujhe", "tumhe", "aapko", "karte", "karne"
+    }
+    telugu_distinct = {
+        "chesanu", "chesamu", "cheyali", "cheyandi", "chestaru", "untundi", "gurinchi", "ippudu", "appudu",
+        "cheppanu", "cheyyadam", "bagundi", "chesina", "kavalani", "pettanu", "chusamu"
+    }
+    tamil_distinct = {
+        "panninen", "pannitom", "matrum", "pannunga", "solren", "seyrom", "romba", "nalla", "seyya",
+        "kooda", "pathom", "pannalam"
+    }
 
-    non_en_count = hindi_matches + telugu_matches + tamil_matches + spanish_matches
+    eng_matches = sum(1 for w in clean_words if w in english_core_vocab)
+    hindi_matches = sum(1 for w in clean_words if w in hindi_distinct)
+    telugu_matches = sum(1 for w in clean_words if w in telugu_distinct)
+    tamil_matches = sum(1 for w in clean_words if w in tamil_distinct)
+    non_en_matches = hindi_matches + telugu_matches + tamil_matches
 
-    # 3. Very short or unclear transcript
+    # 3. Minimum length check
     if total_words < 3:
-        return ("Uncertain", 0.65, False, "uncertain", 50.0)
+        res = ("Uncertain", 0.60, False, "uncertain", 50.0)
+        print(f"[Language Detection Debug] text='{text[:50]}' | result={res}")
+        return res
 
-    # 4. Determine mixed language vs pure language
-    if non_en_count > 0:
-        non_en_ratio = non_en_count / max(total_words, 1)
-        english_percentage = round(max((1.0 - non_en_ratio) * 100.0, 0.0), 1)
+    # 4. English vs Non-English evaluation
+    if non_en_matches == 0:
+        # 100% clean English text
+        res = ("English", 0.98, True, "english", 100.0)
+        print(f"[Language Detection Debug] text='{text[:50]}' | result={res}")
+        return res
 
-        # If significant non-English words used (> 15% or >= 2 non-English words)
-        if non_en_ratio >= 0.40:
-            if hindi_matches >= max(telugu_matches, tamil_matches):
-                return ("Hindi", 0.96, False, "non_english", english_percentage)
-            elif telugu_matches >= tamil_matches:
-                return ("Telugu", 0.96, False, "non_english", english_percentage)
-            else:
-                return ("Tamil", 0.96, False, "non_english", english_percentage)
+    # If substantial non-English words are present
+    non_en_ratio = non_en_matches / max(total_words, 1)
+    english_percentage = round(max((1.0 - non_en_ratio) * 100.0, 0.0), 1)
+
+    # If English words dominate (> 70% and non_en_matches <= 2), treat as English with minor borrowing
+    if eng_matches >= 3 and non_en_matches <= 2 and (eng_matches / max(eng_matches + non_en_matches, 1)) >= 0.70:
+        res = ("English", 0.95, True, "english", english_percentage)
+        print(f"[Language Detection Debug] text='{text[:50]}' | result={res} (English dominant with minor borrowing)")
+        return res
+
+    # If non-English ratio is high (>= 35% or >= 3 distinct non-English words)
+    if non_en_ratio >= 0.35 or non_en_matches >= 3:
+        if non_en_ratio >= 0.60:
+            primary_lang = "Hindi" if hindi_matches >= max(telugu_matches, tamil_matches) else ("Telugu" if telugu_matches >= tamil_matches else "Tamil")
+            res = (primary_lang, 0.96, False, "non_english", english_percentage)
         else:
-            # Code-switching detected (e.g. "I worked on the project and phir maine API optimize ki")
             primary_lang = "Hindi" if hindi_matches > 0 else ("Telugu" if telugu_matches > 0 else "Tamil")
-            return (f"Mixed (English + {primary_lang})", 0.93, False, "mixed", english_percentage)
+            res = (f"Mixed (English + {primary_lang})", 0.93, False, "mixed", english_percentage)
+        print(f"[Language Detection Debug] text='{text[:50]}' | result={res}")
+        return res
 
-    # 5. English word confidence check
-    return ("English", 0.98, True, "english", 100.0)
+    # Default fallback: English
+    res = ("English", 0.96, True, "english", english_percentage)
+    print(f"[Language Detection Debug] text='{text[:50]}' | result={res}")
+    return res
 
 
 @app.post("/api/v1/interview/evaluate-audio", response_model=EvaluateAudioAnswerResponse)

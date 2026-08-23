@@ -1557,15 +1557,17 @@ export const api = {
       const category = (formData.get('category') as string) || 'skill'
       const questionText = (formData.get('question_text') as string) || ''
 
-      // 1. Language Detection First
+      // 1. Language Detection First (from transcript)
       const rawText = transcript.trim()
       const hasDevanagari = /[\u0900-\u097F]/.test(rawText)
       const hasTelugu = /[\u0C00-\u0C7F]/.test(rawText)
       const hasTamil = /[\u0B80-\u0BFF]/.test(rawText)
+      const hasBengali = /[\u0980-\u09FF]/.test(rawText)
 
-      const romanizedHindi = ['phir', 'maine', 'aur', 'mein', 'hum', 'yeh', 'karna', 'kiya', 'tha', 'hai', 'nahi', 'kuch', 'bahut', 'achha']
-      const romanizedTelugu = ['chesanu', 'chesamu', 'nenu', 'memu', 'kani', 'mariyu', 'undi', 'ledu', 'undhi', 'kuda', 'ala', 'ila']
-      const romanizedTamil = ['panninen', 'pannitom', 'naan', 'nanga', 'aana', 'matrum', 'irukku', 'illa']
+      // Distinct unambiguous romanized Indic markers
+      const romanizedHindi = ['phir', 'maine', 'humne', 'karna', 'karenge', 'achha', 'accha', 'chahiye', 'cheezein', 'samajh', 'kaise', 'karte', 'sakte', 'unhone', 'kuch', 'bahut', 'liya', 'diya', 'hoga', 'nahin']
+      const romanizedTelugu = ['chesanu', 'chesamu', 'cheyali', 'cheyandi', 'chestaru', 'untundi', 'gurinchi', 'ippudu', 'appudu', 'cheppanu', 'cheyyadam', 'bagundi']
+      const romanizedTamil = ['panninen', 'pannitom', 'matrum', 'pannunga', 'solren', 'seyrom', 'romba', 'nalla', 'seyya']
 
       const textTokens = rawText.toLowerCase().replace(/[^a-zA-Z\s]/g, '').split(/\s+/).filter(Boolean)
       const hindiMatches = textTokens.filter((t: string) => romanizedHindi.includes(t)).length
@@ -1593,24 +1595,36 @@ export const api = {
         languageConfidence = 0.99
         isEnglish = false
         languageStatus = 'non_english'
+      } else if (hasBengali) {
+        detectedLanguage = 'Bengali'
+        languageConfidence = 0.99
+        isEnglish = false
+        languageStatus = 'non_english'
       } else if (textTokens.length < 3) {
         detectedLanguage = 'Uncertain'
         languageConfidence = 0.60
         isEnglish = false
         languageStatus = 'uncertain'
-      } else if (nonEnMatches > 0) {
+      } else if (nonEnMatches >= 3 || (nonEnMatches / textTokens.length) >= 0.35) {
         const ratio = nonEnMatches / textTokens.length
-        if (ratio >= 0.35) {
+        if (ratio >= 0.60) {
           detectedLanguage = hindiMatches >= Math.max(teluguMatches, tamilMatches) ? 'Hindi' : (teluguMatches >= tamilMatches ? 'Telugu' : 'Tamil')
           languageConfidence = 0.96
           isEnglish = false
           languageStatus = 'non_english'
         } else {
-          detectedLanguage = `Mixed (English + ${hindiMatches > 0 ? 'Hindi' : (teluguMatches > 0 ? 'Telugu' : 'Tamil')})`
+          const primary = hindiMatches > 0 ? 'Hindi' : (teluguMatches > 0 ? 'Telugu' : 'Tamil')
+          detectedLanguage = `Mixed (English + ${primary})`
           languageConfidence = 0.93
           isEnglish = false
           languageStatus = 'mixed'
         }
+      } else {
+        // Clear English with standard tech terms and vocabulary
+        detectedLanguage = 'English'
+        languageConfidence = 0.98
+        isEnglish = true
+        languageStatus = 'english'
       }
 
       // Non-English Gating
