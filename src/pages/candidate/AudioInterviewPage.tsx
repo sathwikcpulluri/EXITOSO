@@ -534,6 +534,32 @@ export default function AudioInterviewPage() {
       const result = await api.evaluateAudioAnswer(formData)
       setCurrentEvaluation(result)
 
+      // Handle Multiple Speakers
+      if (result.speakerStatus === 'multiple_speakers' || result.answerStatus === 'multiple_speakers') {
+        setErrorMessage('Multiple speakers were detected. Please record your answer again in a quiet environment.')
+        setIsEvaluating(false)
+        return
+      }
+
+      // Handle No Speech / Empty Microphone
+      if (result.speakerStatus === 'no_speech' || result.answerStatus === 'no_speech') {
+        setErrorMessage('Your voice was not detected. Please check your microphone and speak clearly.')
+        setIsEvaluating(false)
+        return
+      }
+
+      // Handle Invalid / Failed Transcription
+      if (result.answerStatus === 'transcription_invalid') {
+        setErrorMessage('We could not reliably transcribe this answer. Please try again.')
+        setIsEvaluating(false)
+        return
+      }
+
+      // Update displayed transcript with exact STT output
+      if (result.raw_transcript || result.transcript) {
+        setTextAnswer(result.raw_transcript || result.transcript)
+      }
+
       // Handle Non-English Detection
       if (!result.is_english) {
         setIsEnglishWarning(true)
@@ -545,7 +571,7 @@ export default function AudioInterviewPage() {
         questionNumber: currentQ.question_number,
         category: currentQ.category,
         questionText: currentQ.question_text,
-        transcript: result.transcript,
+        transcript: result.raw_transcript || result.transcript,
         audioUrl: audioUrl || undefined,
         audioPath: audioStoragePath || undefined,
         answerStatus: result.answerStatus,
@@ -591,7 +617,7 @@ export default function AudioInterviewPage() {
               category: currentQ.category,
               question_text: currentQ.question_text,
               audio_path: audioStoragePath,
-              transcript: result.transcript,
+              transcript: result.raw_transcript || result.transcript,
               detected_language: result.detectedLanguage || result.detected_language || result.language || 'English',
               language: result.language || 'English',
               language_confidence: result.languageConfidence ?? result.language_confidence ?? 1.0,
@@ -1179,6 +1205,16 @@ export default function AudioInterviewPage() {
                         </h4>
                       </div>
                       <ScoreRing score={Math.round((currentEvaluation.overallScore ?? currentEvaluation.overall_score ?? 8.0) * 10)} size="sm" />
+                    </div>
+
+                    {/* Evaluated Actual Transcript Box */}
+                    <div className="p-3 rounded-xl bg-black/50 border border-white/10 space-y-1">
+                      <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
+                        Your Answer:
+                      </span>
+                      <p className="text-xs text-white font-mono leading-relaxed max-h-28 overflow-y-auto">
+                        "{currentEvaluation.raw_transcript || currentEvaluation.transcript}"
+                      </p>
                     </div>
 
                     {/* Hard Score Cap Alert if Irrelevant */}

@@ -369,8 +369,14 @@ export interface EvaluateAudioAnswerResponse {
   language_status?: 'english' | 'non_english' | 'mixed' | 'uncertain' | string
   language: string
   transcript: string
+  raw_transcript?: string
+  clean_transcript?: string
+  speakerStatus?: 'single_user' | 'multiple_speakers' | 'no_speech' | 'uncertain' | string
+  speaker_status?: 'single_user' | 'multiple_speakers' | 'no_speech' | 'uncertain' | string
+  speakerCount?: number
+  speaker_count?: number
   englishLanguageScore?: number
-  answerStatus?: 'direct' | 'mostly_relevant' | 'partially_relevant' | 'mostly_off_topic' | 'irrelevant' | 'empty' | string
+  answerStatus?: 'direct' | 'mostly_relevant' | 'partially_relevant' | 'mostly_off_topic' | 'irrelevant' | 'empty' | 'multiple_speakers' | 'no_speech' | 'transcription_invalid' | string
   questionUnderstanding?: number
   relevance?: number
   answerRelevance?: number

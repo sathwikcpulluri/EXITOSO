@@ -2074,9 +2074,16 @@ class EvaluateAudioAnswerResponse(BaseModel):
     language_status: str = "english"
     language: str = "English"
     transcript: str
+    raw_transcript: Optional[str] = None
+    clean_transcript: Optional[str] = None
     englishLanguageScore: Optional[float] = None
 
-    answerStatus: str = "direct"  # "direct" | "mostly_relevant" | "partially_relevant" | "mostly_off_topic" | "irrelevant" | "empty"
+    speakerStatus: str = "single_user"  # "single_user" | "multiple_speakers" | "no_speech" | "uncertain"
+    speaker_status: str = "single_user"
+    speakerCount: int = 1
+    speaker_count: int = 1
+
+    answerStatus: str = "direct"  # "direct" | "mostly_relevant" | "partially_relevant" | "mostly_off_topic" | "irrelevant" | "empty" | "multiple_speakers" | "no_speech" | "transcription_invalid"
     questionUnderstanding: float = 0.0
     relevance: float = 0.0
     answerRelevance: Optional[float] = None
@@ -2271,16 +2278,74 @@ async def evaluate_audio_answer(
     6. Non-generic, evidence-backed feedback referencing actual spoken words.
     """
     raw_transcript = ""
+    clean_transcript = ""
+    speaker_status = "single_user"
+    speaker_count = 1
     
-    # 1. Audio Transcription using Gemini in original verbatim language
+    # 1. Audio Validation & Verbatim Speech-to-Text Transcription
     if audio_file is not None:
         try:
             audio_bytes = await audio_file.read()
             api_key = os.environ.get("GEMINI_API_KEY")
             
-            if GENAI_AVAILABLE and api_key and len(audio_bytes) > 500:
+            if len(audio_bytes) < 400:
+                # Audio file too small / empty microphone buffer
+                return EvaluateAudioAnswerResponse(
+                    session_id=session_id,
+                    question_id=question_id,
+                    answer_id=answer_id,
+                    question_text=question_text,
+                    detectedLanguage="Uncertain",
+                    detected_language="Uncertain",
+                    languageConfidence=0.0,
+                    language_confidence=0.0,
+                    isEnglish=False,
+                    is_english=False,
+                    languageStatus="uncertain",
+                    language_status="uncertain",
+                    language="Uncertain",
+                    transcript="",
+                    raw_transcript="",
+                    clean_transcript="",
+                    speakerStatus="no_speech",
+                    speaker_status="no_speech",
+                    speakerCount=0,
+                    speaker_count=0,
+                    englishLanguageScore=0.0,
+                    answerStatus="no_speech",
+                    questionUnderstanding=0.0,
+                    relevance=0.0,
+                    answerRelevance=0.0,
+                    contentCoverage=0.0,
+                    offTopicRatio=100.0,
+                    scores=ScoresBreakdown(accuracy=0, explanationQuality=0, confidence=0, clarity=0, fluency=0, professionalism=0),
+                    audioMetrics=AudioMetrics(fillerWordCount=0, fillerRate=0, repetitionCount=0, longPauseCount=0, averagePauseDuration=0, speechRate=0),
+                    evidence=EvidenceBreakdown(confidence=[], clarity=[], fluency=[], professionalism=[]),
+                    baseScore=0.0,
+                    finalScore=0.0,
+                    overallScore=0.0,
+                    overall_score=0.0,
+                    strengths=[],
+                    weaknesses=["Your voice was not detected. Please try again."],
+                    feedback="Your voice was not detected. Please check your microphone and speak clearly.",
+                    improvementTip="Click 'Start Recording' and speak your answer directly into the microphone.",
+                    improvement_tip="Click 'Start Recording' and speak your answer directly into the microphone.",
+                    model_version="gemini-1.5-flash-speech-v5",
+                    rubric_version="rubric-strict-evidence-first-v5",
+                )
+
+            if GENAI_AVAILABLE and api_key:
                 client = genai.Client(api_key=api_key)
                 mime_type = audio_file.content_type or "audio/webm"
+                
+                transcribe_prompt = (
+                    "Listen to this recorded interview audio. Perform verbatim speech-to-text transcription of what the speaker actually said.\n"
+                    "RULES:\n"
+                    "1. DO NOT translate to English if spoken in another language. Transcribe exact words.\n"
+                    "2. DO NOT correct grammar, DO NOT remove filler words (e.g. um, uh, like), and DO NOT summarize.\n"
+                    "3. DO NOT insert question text or sample interview answers. ONLY transcribe the user's speech.\n"
+                    "4. Output a JSON object with keys: 'raw_transcript' (exact words spoken), 'clean_transcript' (light punctuation only), 'speaker_count' (integer), 'speaker_status' ('single_user' | 'multiple_speakers' | 'no_speech')."
+                )
                 
                 response = client.models.generate_content(
                     model="gemini-2.5-flash",
@@ -2289,20 +2354,85 @@ async def evaluate_audio_answer(
                             data=audio_bytes,
                             mime_type=mime_type,
                         ),
-                        "Please provide an accurate verbatim transcription of this spoken audio in its original spoken language (e.g. Hindi, Telugu, Tamil, or English). DO NOT TRANSLATE TO ENGLISH. Transcribe verbatim."
+                        transcribe_prompt
                     ]
                 )
-                raw_transcript = response.text.strip() if response.text else ""
+                
+                resp_text = response.text.strip() if response.text else ""
+                # Parse JSON or fallback to raw string
+                if "{" in resp_text and "}" in resp_text:
+                    try:
+                        json_str = resp_text[resp_text.find("{"):resp_text.rfind("}")+1]
+                        parsed_stt = json.loads(json_str)
+                        raw_transcript = parsed_stt.get("raw_transcript", "").strip()
+                        clean_transcript = parsed_stt.get("clean_transcript", raw_transcript).strip()
+                        speaker_status = parsed_stt.get("speaker_status", "single_user")
+                        speaker_count = int(parsed_stt.get("speaker_count", 1))
+                    except Exception:
+                        raw_transcript = resp_text.replace("```json", "").replace("```", "").strip()
+                        clean_transcript = raw_transcript
+                else:
+                    raw_transcript = resp_text
+                    clean_transcript = resp_text
             else:
                 raw_transcript = transcript_text or ""
+                clean_transcript = raw_transcript
         except Exception as e:
             print(f"[Interview Audio Transcribe Warning]: {e}")
             raw_transcript = transcript_text or ""
+            clean_transcript = raw_transcript
     elif transcript_text:
         raw_transcript = transcript_text.strip()
+        clean_transcript = raw_transcript
 
-    # Empty Audio Check
-    if not raw_transcript.strip():
+    # Check for Multiple Speakers
+    if speaker_status == "multiple_speakers" or speaker_count > 1:
+        return EvaluateAudioAnswerResponse(
+            session_id=session_id,
+            question_id=question_id,
+            answer_id=answer_id,
+            question_text=question_text,
+            detectedLanguage="English",
+            detected_language="English",
+            languageConfidence=1.0,
+            language_confidence=1.0,
+            isEnglish=True,
+            is_english=True,
+            languageStatus="english",
+            language_status="english",
+            language="English",
+            transcript=raw_transcript,
+            raw_transcript=raw_transcript,
+            clean_transcript=clean_transcript,
+            speakerStatus="multiple_speakers",
+            speaker_status="multiple_speakers",
+            speakerCount=speaker_count,
+            speaker_count=speaker_count,
+            englishLanguageScore=0.0,
+            answerStatus="multiple_speakers",
+            questionUnderstanding=0.0,
+            relevance=0.0,
+            answerRelevance=0.0,
+            contentCoverage=0.0,
+            offTopicRatio=100.0,
+            scores=ScoresBreakdown(accuracy=0, explanationQuality=0, confidence=0, clarity=0, fluency=0, professionalism=0),
+            audioMetrics=AudioMetrics(fillerWordCount=0, fillerRate=0, repetitionCount=0, longPauseCount=0, averagePauseDuration=0, speechRate=0),
+            evidence=EvidenceBreakdown(confidence=[], clarity=[], fluency=[], professionalism=[]),
+            baseScore=0.0,
+            finalScore=0.0,
+            overallScore=0.0,
+            overall_score=0.0,
+            strengths=[],
+            weaknesses=["Multiple distinct speakers or background voices were detected."],
+            feedback="Multiple speakers were detected. Please record your answer again in a quiet environment.",
+            improvementTip="Ensure you are in a quiet room without background voices or system audio playback.",
+            improvement_tip="Ensure you are in a quiet room without background voices or system audio playback.",
+            model_version="gemini-1.5-flash-speech-v5",
+            rubric_version="rubric-strict-evidence-first-v5",
+        )
+
+    # Empty Audio / No Speech Check
+    if not raw_transcript.strip() or speaker_status == "no_speech":
         return EvaluateAudioAnswerResponse(
             session_id=session_id,
             question_id=question_id,
@@ -2318,8 +2448,14 @@ async def evaluate_audio_answer(
             language_status="uncertain",
             language="Uncertain",
             transcript="",
+            raw_transcript="",
+            clean_transcript="",
+            speakerStatus="no_speech",
+            speaker_status="no_speech",
+            speakerCount=0,
+            speaker_count=0,
             englishLanguageScore=0.0,
-            answerStatus="empty",
+            answerStatus="no_speech",
             questionUnderstanding=0.0,
             relevance=0.0,
             answerRelevance=0.0,
@@ -2333,10 +2469,10 @@ async def evaluate_audio_answer(
             overallScore=0.0,
             overall_score=0.0,
             strengths=[],
-            weaknesses=["No speech or text detected for this question."],
-            feedback="Could not understand your recording. Please try again and speak clearly into your microphone.",
-            improvementTip="Click 'Start Recording' and answer the question directly in English.",
-            improvement_tip="Click 'Start Recording' and answer the question directly in English.",
+            weaknesses=["No speech was detected for this question."],
+            feedback="No speech was detected. Please check your microphone and speak clearly.",
+            improvementTip="Click 'Start Recording' and speak your answer directly into the microphone.",
+            improvement_tip="Click 'Start Recording' and speak your answer directly into the microphone.",
             model_version="gemini-1.5-flash-speech-v5",
             rubric_version="rubric-strict-evidence-first-v5",
         )
@@ -2791,6 +2927,12 @@ async def evaluate_audio_answer(
         language_status="english",
         language="English",
         transcript=raw_transcript,
+        raw_transcript=raw_transcript,
+        clean_transcript=clean_transcript,
+        speakerStatus=speaker_status,
+        speaker_status=speaker_status,
+        speakerCount=speaker_count,
+        speaker_count=speaker_count,
         englishLanguageScore=10.0,
         answerStatus=answer_status,
         questionUnderstanding=round(p_relevance, 1),
