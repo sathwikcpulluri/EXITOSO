@@ -7,13 +7,11 @@ import { ScoreRing } from '@/components/ui/ScoreRing'
 import { ProgressBar } from '@/components/ui/ProgressBar'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/lib/supabase'
-import { type ApplicationRecord } from '@/lib/api'
 import {
   Target,
   Sparkles,
   Briefcase,
   BrainCircuit,
-  Send,
   Upload,
   History,
   ShieldAlert,
@@ -34,6 +32,15 @@ interface PredictionItem {
   created_at: string
 }
 
+interface InterviewSessionItem {
+  id: string
+  target_role: string
+  overall_communication_score?: number
+  total_score?: number
+  status: string
+  created_at: string
+}
+
 export default function CandidateDashboard() {
   const navigate = useNavigate()
   const { user } = useAuthStore()
@@ -47,8 +54,8 @@ export default function CandidateDashboard() {
   const [candidateLocation, setCandidateLocation] = useState<string>('')
 
   // Real activity data from Supabase
-  const [applications, setApplications] = useState<ApplicationRecord[]>([])
   const [recentPredictions, setRecentPredictions] = useState<PredictionItem[]>([])
+  const [recentInterviews, setRecentInterviews] = useState<InterviewSessionItem[]>([])
 
   useEffect(() => {
     async function loadDashboardData() {
@@ -85,23 +92,7 @@ export default function CandidateDashboard() {
         setCandidateLocation(finalLoc)
         setCandidateSkills(cleanSkills)
 
-        // 2. Fetch Real Applications from Supabase
-        const { data: dbApps } = await supabase
-          .from('applications')
-          .select('*')
-          .eq('user_id', authUser.id)
-          .order('created_at', { ascending: false })
-
-        const metaApps: ApplicationRecord[] = Array.isArray(meta.applications) ? meta.applications : []
-        const combinedApps = [...(Array.isArray(dbApps) ? dbApps : [])]
-        for (const metaApp of metaApps) {
-          if (!combinedApps.some((c) => c.job_id === metaApp.job_id || c.id === metaApp.id)) {
-            combinedApps.push(metaApp)
-          }
-        }
-        setApplications(combinedApps)
-
-        // 3. Fetch Real Prediction History from Supabase
+        // 2. Fetch Real Prediction History from Supabase
         const { data: dbHistory } = await supabase
           .from('prediction_history')
           .select('id, job_title, company, match_score, prediction_label, created_at')
@@ -118,8 +109,20 @@ export default function CandidateDashboard() {
         }
         combinedHistory.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
         setRecentPredictions(combinedHistory.slice(0, 4))
+
+        // 3. Fetch Real Interview Practice Sessions from Supabase
+        const { data: dbInterviews } = await supabase
+          .from('interview_practice_sessions')
+          .select('id, target_role, overall_communication_score, total_score, status, created_at')
+          .eq('user_id', authUser.id)
+          .order('created_at', { ascending: false })
+          .limit(3)
+
+        if (Array.isArray(dbInterviews)) {
+          setRecentInterviews(dbInterviews)
+        }
       } catch (err) {
-        console.error('[Dashboard Load Error]', err)
+        console.error('[CandidateDashboard Load Error]', err)
       }
     }
 
@@ -138,42 +141,44 @@ export default function CandidateDashboard() {
     100
   )
 
-  const hasResume = candidateSkills.length > 0
+  const hasResume = candidateSkills.length > 0 || candidateExp > 0 || candidateEducation !== ''
   const hasPredictions = recentPredictions.length > 0
-  const hasApps = applications.length > 0
   const latestPrediction = recentPredictions[0]
 
   const scrollToHowItWorks = () => {
-    document.getElementById('how-careerai-works')?.scrollIntoView({ behavior: 'smooth' })
+    const el = document.getElementById('how-careerai-works')
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' })
+    }
   }
 
   return (
-    <div className="space-y-10 animate-fade-in pb-16 text-white max-w-6xl mx-auto">
-      {/* 1. HERO / WELCOME SECTION */}
-      <div className="p-8 rounded-3xl bg-gradient-to-r from-rose-950/40 via-neutral-900/90 to-orange-950/30 border border-white/10 shadow-[0_20px_45px_rgba(0,0,0,0.6)] space-y-6">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+    <div className="space-y-8 animate-fade-in pb-16">
+      {/* 1. HERO / WELCOME BANNER */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-rose-950/60 via-neutral-900 to-orange-950/50 border border-white/10 p-8 shadow-[0_20px_50px_rgba(0,0,0,0.6)] space-y-6">
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
           <div className="space-y-2 max-w-2xl">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[11px] font-extrabold uppercase tracking-wider flex items-center gap-1.5">
-                <Sparkles className="h-3.5 w-3.5 text-orange-400" /> CareerAI Intelligence Platform
-              </span>
-              <span className="text-xs text-neutral-400">Welcome, {candidateName}</span>
+            <div className="flex items-center gap-2">
+              <Badge variant="info" className="uppercase tracking-wider text-[10px]">
+                Active AI Workspace
+              </Badge>
+              <span className="text-xs text-neutral-400 font-mono">Welcome back, {candidateName}</span>
             </div>
             <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight leading-tight">
               Your AI Career Intelligence Dashboard
             </h1>
-            <p className="text-xs sm:text-sm text-neutral-300 leading-relaxed">
+            <p className="text-sm text-neutral-300 leading-relaxed">
               Analyze your profile, understand your job fit, prepare for interviews, improve your career readiness, and monitor future career risks.
             </p>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center gap-3 shrink-0 w-full sm:w-auto">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto shrink-0">
             <Button
               size="md"
               onClick={() => navigate('/candidate/job-fit')}
-              className="w-full sm:w-auto gap-2 shadow-[0_0_24px_rgba(255,0,94,0.4)] text-xs cursor-pointer font-bold"
+              className="w-full sm:w-auto gap-2 shadow-[0_0_24px_rgba(255,0,94,0.4)] text-xs font-bold cursor-pointer"
             >
-              <Target className="h-4 w-4 text-orange-400" /> Start Career Analysis
+              <Sparkles className="h-4 w-4 text-orange-400" /> Start Career Assessment
             </Button>
             <Button
               variant="outline"
@@ -193,8 +198,6 @@ export default function CandidateDashboard() {
             <span>
               {!hasResume ? (
                 <strong className="text-rose-300">Start by uploading your resume in your Profile to unlock personalized predictions.</strong>
-              ) : hasApps ? (
-                <strong className="text-emerald-300">You have {applications.length} active application{applications.length === 1 ? '' : 's'} tracked in your dashboard.</strong>
               ) : hasPredictions ? (
                 <strong className="text-orange-300">Your latest job-fit analysis scored {latestPrediction.match_score}/100 for {latestPrediction.job_title}.</strong>
               ) : (
@@ -243,10 +246,10 @@ export default function CandidateDashboard() {
             </Card>
           </Link>
 
-          <Link to="/candidate/applications" className="block">
+          <Link to="/candidate/practice" className="block">
             <Card className="p-3.5 text-center border-white/10 hover:border-rose-500/40 hover:bg-white/[0.04] transition-all group">
-              <Send className="h-5 w-5 mx-auto text-rose-400 mb-1.5 group-hover:scale-110 transition-transform" />
-              <span className="text-xs font-bold text-white block">Application Tracker</span>
+              <BrainCircuit className="h-5 w-5 mx-auto text-rose-400 mb-1.5 group-hover:scale-110 transition-transform" />
+              <span className="text-xs font-bold text-white block">Audio Interview</span>
             </Card>
           </Link>
 
@@ -379,9 +382,9 @@ export default function CandidateDashboard() {
 
           <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/10 space-y-2 relative">
             <span className="text-2xl font-black text-emerald-500 font-mono block">04</span>
-            <h4 className="text-sm font-bold text-white">Track Your Career</h4>
+            <h4 className="text-sm font-bold text-white">Interview & Advance</h4>
             <p className="text-xs text-neutral-400 leading-relaxed">
-              Review historical predictions, manage applications in your Application Tracker, and monitor career trajectory signals.
+              Practice resume-tailored spoken interviews, analyze communication scores, and review historical prediction records.
             </p>
           </div>
         </div>
@@ -444,7 +447,7 @@ export default function CandidateDashboard() {
           </div>
         </Card>
 
-        {/* Right: Real Recent Activity (Predictions & Applications) */}
+        {/* Right: Real Recent Activity (Predictions & Interview Practice) */}
         <div className="lg:col-span-2 space-y-6">
           <Card className="p-6 border-white/10 space-y-4">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -497,41 +500,47 @@ export default function CandidateDashboard() {
             </div>
           </Card>
 
-          {/* Recent Applications Preview */}
+          {/* Recent Interview Practice Preview */}
           <Card className="p-6 border-white/10 space-y-4">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-base flex items-center gap-2">
-                <Send className="h-4 w-4 text-emerald-400" /> Tracked Applications ({applications.length})
+                <BrainCircuit className="h-4 w-4 text-emerald-400" /> Audio Interview Practice ({recentInterviews.length})
               </CardTitle>
-              <Link to="/candidate/applications" className="text-xs text-emerald-400 hover:underline font-semibold">
-                Open Tracker →
+              <Link to="/candidate/practice" className="text-xs text-emerald-400 hover:underline font-semibold">
+                Practice Room →
               </Link>
             </CardHeader>
 
             <div className="space-y-2.5">
-              {applications.length === 0 ? (
+              {recentInterviews.length === 0 ? (
                 <div className="p-6 text-center text-neutral-500 space-y-2">
-                  <Briefcase className="h-8 w-8 mx-auto opacity-30 text-emerald-400" />
-                  <p className="text-xs">No active applications tracked yet.</p>
-                  <Link to="/candidate/recommendations">
+                  <BrainCircuit className="h-8 w-8 mx-auto opacity-30 text-emerald-400" />
+                  <p className="text-xs">No audio practice sessions completed yet.</p>
+                  <Link to="/candidate/practice">
                     <Button size="sm" variant="outline" className="mt-1 text-xs cursor-pointer">
-                      Explore Jobs & Apply
+                      Start 15-Question Practice Room
                     </Button>
                   </Link>
                 </div>
               ) : (
-                applications.slice(0, 3).map((app) => (
+                recentInterviews.map((item) => (
                   <div
-                    key={app.id || app.job_id}
+                    key={item.id}
                     className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between gap-4 text-xs"
                   >
                     <div>
-                      <h5 className="font-bold text-white text-sm">{app.job_title}</h5>
-                      <p className="text-neutral-400 text-[11px]">{app.company_name}</p>
+                      <h5 className="font-bold text-white text-sm">{item.target_role}</h5>
+                      <p className="text-neutral-400 text-[11px] flex items-center gap-1.5 mt-0.5">
+                        <Calendar className="h-3 w-3 text-neutral-500" />
+                        {new Date(item.created_at).toLocaleDateString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </p>
                     </div>
                     <div className="flex items-center gap-3">
-                      <Badge variant="info">{app.status || 'Saved'}</Badge>
-                      <ScoreRing score={app.application_readiness || app.match_score || 80} size="sm" />
+                      <Badge variant="success">{item.status || 'Completed'}</Badge>
+                      <ScoreRing score={Math.round((item.overall_communication_score || item.total_score || 8.0) * 10)} size="sm" />
                     </div>
                   </div>
                 ))

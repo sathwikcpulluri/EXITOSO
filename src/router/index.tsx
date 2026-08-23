@@ -18,7 +18,6 @@ const JobFitPage = lazy(() => import('@/pages/candidate/JobFitPage'))
 const FitHistoryPage = lazy(() => import('@/pages/candidate/FitHistoryPage'))
 const JobRecommendationsPage = lazy(() => import('@/pages/candidate/JobRecommendationsPage'))
 const HiringProbabilityPage = lazy(() => import('@/pages/candidate/HiringProbabilityPage'))
-const ApplicationsPage = lazy(() => import('@/pages/candidate/ApplicationsPage'))
 const AudioInterviewPage = lazy(() => import('@/pages/candidate/AudioInterviewPage'))
 const SettingsPage = lazy(() => import('@/pages/candidate/SettingsPage'))
 
@@ -70,7 +69,6 @@ export const router = createBrowserRouter([
       { path: 'hiring-probability', element: <LazyWrapper><HiringProbabilityPage /></LazyWrapper> },
       { path: 'fit-history', element: <LazyWrapper><FitHistoryPage /></LazyWrapper> },
       { path: 'recommendations', element: <LazyWrapper><JobRecommendationsPage /></LazyWrapper> },
-      { path: 'applications', element: <LazyWrapper><ApplicationsPage /></LazyWrapper> },
       { path: 'practice', element: <LazyWrapper><AudioInterviewPage /></LazyWrapper> },
       { path: 'settings', element: <LazyWrapper><SettingsPage /></LazyWrapper> },
     ],

@@ -640,7 +640,7 @@ export function ApplicationAssistantModal({
                   <div className="max-w-md mx-auto space-y-1.5">
                     <h3 className="text-lg font-bold text-white">Submit or Save Application</h3>
                     <p className="text-xs text-neutral-400 leading-relaxed">
-                      Save this application directly to your personal Application Tracker, or launch the company application page.
+                      Save this tailored application record or launch the company application page directly.
                     </p>
                   </div>
 
