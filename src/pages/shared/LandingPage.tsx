@@ -11,7 +11,7 @@ import {
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-[#050505] text-white selection:bg-rose-500 selection:text-white font-sans relative overflow-x-hidden">
+    <div className="min-h-screen bg-transparent text-white selection:bg-rose-500 selection:text-white font-sans relative overflow-x-hidden">
       
       {/* Cosmic Arc & Atmospheric Horizon Light Effect */}
       <div className="absolute top-0 right-0 w-full h-[850px] pointer-events-none overflow-hidden z-0">

@@ -5,6 +5,7 @@ import { queryClient } from '@/lib/queryClient'
 import { TooltipProvider } from '@/components/ui/Tooltip'
 import { router } from '@/router'
 import { useAuthStore } from '@/store/authStore'
+import { SplineBackground } from '@/components/common/SplineBackground'
 
 function App() {
   const { initAuth } = useAuthStore()
@@ -16,7 +17,10 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <RouterProvider router={router} />
+        <div className="relative min-h-screen bg-[#050505] text-white selection:bg-rose-500 selection:text-white">
+          <SplineBackground />
+          <RouterProvider router={router} />
+        </div>
       </TooltipProvider>
     </QueryClientProvider>
   )

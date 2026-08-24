@@ -3,9 +3,9 @@ import { Sparkles, CheckCircle2 } from 'lucide-react'
 
 export function AuthLayout() {
   return (
-    <div className="min-h-screen flex bg-[#050505] text-white selection:bg-rose-500 selection:text-white">
+    <div className="min-h-screen flex bg-transparent text-white selection:bg-rose-500 selection:text-white">
       {/* Left branding panel */}
-      <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gradient-to-br from-[#0c0c0c] via-[#050505] to-[#12080a] border-r border-white/[0.08]">
+      <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-black/40 backdrop-blur-xl border-r border-white/[0.08]">
         {/* Upper and lower ambient nebulae */}
         <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-rose-600/15 blur-[120px] pointer-events-none" />
         <div className="absolute -bottom-32 -right-32 w-96 h-96 rounded-full bg-orange-600/15 blur-[120px] pointer-events-none" />
